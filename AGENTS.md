@@ -1,71 +1,33 @@
-# MiniJinja Perl XS Module - Agent Notes
+# Minijinja Perl XS - Agent Notes
 
-## Purpose
+## Project State
 
-This directory contains Perl XS bindings for the [MiniJinja](https://github.com/mitsuhiko/minijinja) template engine. It provides low-level C bindings via minijinja-cabi exposed through Perl using XS.
+**BROKEN.** This module does not compile or run. Multiple critical blockers exist. All fixes require coordinated changes across XS, Perl wrapper, and tests.
 
 ## Architecture
 
-- **Single namespace**: `MiniJinja` - no OO classes, pure functional API
-- All functions operate on opaque handles (IVs) returned by other functions  
-- Values are heap-allocated and must be freed manually with `mj_value_free()`
-- Callbacks store references in global HVs to prevent garbage collection
+Perl XS bindings wrapping [minijinja-cabi](https://github.com/mitsuhiko/minijinja) (Rust template engine). Two interfaces conflict:
 
-### Key Files
+- **XS layer** (`Minijinja.xs`)     - perl XS binding to the cabi minijinja
+- **Perl wrapper** (`Minijinja.pm`) - perl .pm wrapper, mostly XSLoad()
+
+## Key Files (all at project root, no lib/ subdirectory)
 
 | File | Purpose |
 |------|---------|
-| `lib/MiniJinja.pm` | Main module - exports all functions from XSLoader |
-| `minijinja.xs` | XSUB definitions wrapping the minijinja-cabi C API |
-| `perl_callbacks.c` | Callback helpers for Perl functions passed as filters/functions/tests |
-| `Makefile.PL` | Build configuration - finds libminijinja_cabi |
+| `Minijinja.pm` | wrapper — BROKEN: calls undefined XSUBs (`mj_*` prefix) |
+| `Minijinja.xs` | ~395 lines of XSUB definitions — underscore-prefixed, uses bracket syntax with CODE blocks |
+| `Makefile.PL` | Build config — expects `../minijinja/target/release/libminijinja_cabi.so` |
+| `t/*` | Simpler tests using |
 
-### Function Categories
-
-1. **Environment** (`mj_env_*`) - Create/configure environments, add/render templates
-2. **Value** (`mj_value_*`) - Create/read/manipulate MiniJinja values
-3. **Iterator** (`mj_value_iter_*`) - Iterate over sequences/maps
-4. **Error** (`mj_err_*`) - Query error state after failed operations
-5. **Syntax Config** (`mj_syntax_config_*`) - Custom template syntax delimiters
-
-## Building
+## Build Steps
 
 ```bash
-cd minijinja/minijinja-cabi && cargo build --release
-export MINIJINJA_BUILD=/path/to/minijinja/target/release  
-cd ../minijinja-perl
-perl Makefile.PL && make && make test
+rustup default stable
+bash scripts/setup-minijinja.sh
+export MINIJINJA_SRC=$(pwd)/minijinja
+export LD_LIBRARY_PATH=$(pwd)/minijinja/target/release
+perl Makefile.PL
+make
+make test
 ```
-
-Or set `MINIJINJA_SRC` and `MINIJINJA_BUILD` environment variables to point to cargo registry paths.
-
-## Current State (After Cleanup)
-
-- Removed all debug `fprintf(stderr)` statements from callbacks
-- Converted from OO style (`MiniJinja::Environment`, etc.) to functional API in single `MiniJinja` namespace  
-- Updated tests to use new functional API
-- Tests reference external modules that may need Test::More installed
-
-## Known Issues / Future Work
-
-1. The iterator usage pattern in tests is awkward - consider providing a convenience function for iteration
-2. Map iteration uses string keys but hash lookups could be more efficient with direct key access  
-3. Memory management is manual - consider wrapper objects or AUTOLOAD for automatic cleanup
-4. Error handling raises exceptions via croak but some functions don't check for errors
-5. Need to verify all value kind constants match the C header definitions
-
-## Value Kind Reference
-
-| Constant | Value | Description |
-|----------|-------|-------------|
-| MJ_VALUE_KIND_UNDEFINED | 0 | Undefined value |
-| MJ_VALUE_KIND_NONE | 1 | None/nil value |  
-| MJ_VALUE_KIND_BOOL | 2 | Boolean true/false
-| MJ_VALUE_KIND_NUMBER | 3 | Integer or float
-| MJ_VALUE_KIND_STRING | 4 | UTF-8 string
-| MJ_VALUE_KIND_BYTES | 5 | Raw bytes
-| MJ_VALUE_KIND_SEQ | 6 | Sequence (list/array)
-| MJ_VALUE_KIND_MAP | 7 | Map/object/hash
-| MJ_VALUE_KIND_ITERABLE | 8 | Iterable (non-sequence)
-| MJ_VALUE_KIND_PLAIN | 9 | Plain object
-| MJ_VALUE_KIND_INVALID | 10 | Invalid/malformed
