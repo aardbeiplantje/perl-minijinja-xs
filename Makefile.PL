@@ -14,7 +14,7 @@ WriteMakefile(
     VERSION_FROM        => 'lib/Minijinja.pm',
     LIBS                => ["-L$lib_dir -lminijinja_cabi"],
     CCFLAGS             => "$Config{ccflags} -Wextra -Werror -fPIC -rdynamic",
-    LDDLFLAGS           => "-shared -Wl,--disable-new-dtags -L$lib_dir -Wl,-R$r_path -Wl,-rpath=$r_path -lcurl",
+    LDDLFLAGS           => "-shared -Wl,--disable-new-dtags -L$lib_dir -Wl,-R$r_path -Wl,-rpath=$r_path",
     OPTIMIZE            => '-Os',
     MAN1PODS            => {},
     MAN3PODS            => {},
