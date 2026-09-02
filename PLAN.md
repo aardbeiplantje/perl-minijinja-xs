@@ -285,7 +285,7 @@ Build incrementally so each chunk compiles and can be tested independently:
 
 1. **Environment**: `new()` + M_DESTROY via XS BOOT section → test with t/00-load.t modified to actually create env
    - Verify blessed ref is returned, M_FREE fires on undef
-   
+    
 2. **Internal conversion helpers**: Static C functions `perl_to_mj_value()` and `mj_value_to_perl()`
    - Not exported XSUBs — just internal utilities. Test by building them into the environment code.
 
@@ -316,42 +316,205 @@ Each step: `perl Makefile.PL && make` and check for compilation errors before mo
 ## Wrapper Struct Design
 
 ```c
-/* Env handle — blessed scalar ref containing mj_env* pointer */
-/* Standard XS pattern: bless SV, store pointer as IV */
+#define THIS(sv)      INT2PTR(void *, SvIV(SvRV(sv)))
+
 typedef struct perl_mj_env {
-    mj_env *env;           /* actual minijinja environment pointer */
-    int valid;             /* 1 = alive, 0 = already freed (double-free protection) */
+    mj_env *env;           /* CABI environment handle */
 } perl_mj_env_t;
 ```
 
-For env handles, we bless a scalar whose RV contains an IV pointing to the wrapper struct. When M_DESTROY fires (refcount reaches zero), we check valid flag, call `mj_env_free()`, set valid=0, free struct. Double-free becomes safe no-op.
+No validity flag needed. After free, set `pe->env = NULL`. All access checks `if (pe->env != NULL)` before use. Simple and clean — no extra state to track.
 
-XS BOOT section registers DESTROY callback for the `Minijinja::Env` package name:
+### Allocation pattern (Perl malloc)
+
+Structs are allocated via Perl's `Newxz()` which integrates with Perl's memory management:
+
 ```c
-BOOT: {
-    sv_setiv(ST(0), PTR2IV(pv));  // set pointer in blessed SV
-    // ... register gv_stashpv("Minijinja::Env") with mg_get/DESTROY ...
-}
+perl_mj_env_t *pe = NULL;
+Newxz(pe, 1, perl_mj_env_t);    /* allocate & zero-initialize */
+if (!pe) croak("out of memory"); /* allocation failure is fatal */
 ```
 
-Actually the standard XS way is simpler — use the `M_` prefix convention and let ExtUtils::xsubpp handle it:
+`Newxz` zero-initializes the allocation (`z` suffix), so `pe->env` starts as NULL automatically. No manual initialization needed. Zeroed pointer also means double-free protection is handled by the NULL check alone — after freeing, set the pointer to NULL so subsequent accesses become no-ops.
 
-```xs
+### Blessed SV construction
+
+We bless a scalar ref containing the **wrapper struct pointer** directly (not the raw CABI handle). The wrapper IS the blessed reference — there's only one type of stored object in Minijinja, so we need no separate namespaces like curl's `"http::curl::easy"` vs `"http::curl::multi"`. Package name is simply `"Minijinja"`.
+
+```c
+SV *sv = sv_newmortal();
+SvPOK_only(sv);                     /* opaque scalar — not a string we manipulate */
+sv_setref_pv(sv, "Minijinja", pe);  /* bless + store wrapper ptr as IV */
+ST(0) = sv;                         /* return to caller */
+XSRETURN(1);
+```
+
+`sv_setref_pv()` does two things: sets the RV flag (making it a ref), stores the pointer as an IV in the referent, and blesses into the specified package. The XS loader recognizes the `"Minijinja"` package name and will call our `M_DESTROY()` when refcount reaches zero.
+
+### M_DESTROY pattern
+
+Nullify the env pointer first (double-free protection via explicit NULL check), then free the entire wrapper struct:
+
+```c
+void M_DESTROY(SV *sv)
+    CODE:
+        dTHX;
+        if (!THISSvOK(sv)) return;        /* not a blessed ref → nothing to do */
+
+        perl_mj_env_t *pe = THIS(sv);     /* extract wrapper ptr via THIS() macro */
+        if (pe->env != NULL) {            /* explicit NULL check — double-free protection */
+            mj_env_free(pe->env);         /* CABI cleanup */
+            pe->env = NULL;               /* nullify so further calls are no-ops */
+        }
+        Safefree(pe);                     /* free entire wrapper struct */
+```
+
+Key points:
+- Check `pe->env != NULL` — after first free, env is set to NULL so subsequent calls are no-ops. No validity flag needed.
+- `Safefree()` is Perl's safe free that handles NULL pointers gracefully.
+- After `pe->env = NULL`, any further access through `THIS(sv)` gets a valid struct pointer but with NULL env — the NULL check prevents calling `mj_env_free(NULL)`.
+- The entire wrapper struct is freed on destruction — no leak.
+
+### Example XSUBs using these patterns
+
+**new():**
+
+```c
+SV *M_new(...)
+    CODE:
+        dTHX; dSP;
+
+        /* Allocate wrapper struct via Perl malloc */
+        perl_mj_env_t *pe = NULL;
+        Newxz(pe, 1, perl_mj_env_t);      /* allocate & zero-init */
+        if (!pe) croak("out of memory");
+
+        pe->env = mj_env_new();           /* CABI call */
+        if (!pe->env) {                   /* allocation failure */
+            Safefree(pe);                 /* free wrapper on failure */
+            XSRETURN_UNDEF;
+        }
+
+        /* Apply optional config from %opts hashref */
+        HV *hv = NULL;
+        if (items > 1 && SvROK(ST(1)) && SvTYPE(SvRV(ST(1))) == SVt_PVHV) {
+            hv = (HV*)SvRV(ST(1));
+            // iterate hv keys to apply settings...
+        }
+
+        /* Bless and return */
+        SV *sv = sv_newmortal();
+        SvPOK_only(sv);
+        sv_setref_pv(sv, "Minijinja", pe);/* bless + store wrapper ptr */
+        ST(0) = sv;
+        XSRETURN(1);
+```
+
+**M_DESTROY():**
+
+```c
 void M_DESTROY(SV *sv)
     CODE:
         dTHX;
         if (!THISSvOK(sv)) return;
-        perl_mj_env_t *pe = INT2PTR(perl_mj_env_t*, SvIV(SvRV(sv)));
-        if (!pe->valid) return;  // already freed
-        pe->valid = 0;
-        mj_env_free(pe->env);
-        Safefree(pe);
+
+        perl_mj_env_t *pe = THIS(sv);     /* extract via macro */
+        if (pe->env != NULL) {            /* explicit NULL check → double-free protection */
+            mj_env_free(pe->env);         /* CABI cleanup */
+            pe->env = NULL;               /* nullify so further calls are no-ops */
+        }
+        Safefree(pe);                     /* free entire wrapper struct */
 ```
 
-No need for explicit BOOT registration — XSUBs with `_DESTROY` suffix are automatically detected by XS loader as finalizers when the package name matches.
+**add_template() as example:**
+
+```c
+bool M_add_template(SV *env_sv, char *name, char *source)
+    PREINIT:
+        perl_mj_env_t *pe;
+    CODE:
+        dTHX;
+        if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
+        pe = THIS(env_sv);                /* extract wrapper ptr via THIS() macro */
+        if (pe->env == NULL) croak("Minijinja environment already freed");
+        RETVAL = mj_env_add_template(pe->env, name, source);
+    OUTPUT: RETVAL
+```
+
+### render_template() using auto-conversion
+
+Context parameter is a hashref or undef — XS loops over keys/values and converts each through `perl_to_mj_value()` internally:
+
+```c
+SV *M_render_template(SV *env_sv, char *name, SV *ctx_sv=PL_sv_undef)
+    PREINIT:
+        perl_mj_env_t *pe;
+        mj_value ctx;                    /* built internally from %ctx hashref or empty object */
+    CODE:
+        dTHX;
+
+        /* Validate env handle */
+        if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
+        pe = THIS(env_sv);
+        if (pe->env == NULL) croak("Minijinja environment already freed");
+
+        /* Convert optional context to mj_object value */
+        if (!ctx_sv || !SvOK(ctx_sv) || ctx_sv == PL_sv_undef) {
+            ctx = mj_value_new_object();  /* empty context — no variables available */
+        } else if (SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
+            HV *hv = (HV*)SvRV(ctx_sv);
+            HE *he;
+            I32 key_len;
+            const char *key;
+
+            ctx = mj_value_new_object();
+            hv_iterinit(hv);
+            while ((he = hv_iternext(hv))) {
+                key = hv_iterkey(he, &key_len);
+                SV *val = hv_iterval(hv, he);
+
+                /* Recursively convert Perl value → mj_value via internal helper */
+                mj_value mv = perl_to_mj_value(val);
+
+                /* Set as string key on object */
+                mj_value_set_string_key(&ctx, key, mv);
+                /* Note: mj_value_set_string_key takes ownership of 'mv' per CABI spec */
+            }
+        } else {
+            /* ctx is not a hashref — treat as single-value context */
+            ctx = perl_to_mj_value(ctx_sv);
+        }
+
+        /* Render template */
+        RETVAL = mj_env_render_template(pe->env, name, ctx);
+
+        /* Convert returned char* to Perl SV and free internally */
+        if (RETVAL) {
+            SV *result = sv_newmortal();
+            sv_setsv(result, sv_2mortal(newSVpv(RETVAL, 0)));  /* copy string into SV */
+            mj_str_free(RETVAL);                              /* free minijinja-allocated string */
+            ST(0) = result;
+            XSRETURN(1);
+        } else {
+            XSRETURN_UNDEF;   /* render failed — error info available via error_*() */
+        }
+
+    OUTPUT: RETVAL
+```
+
+### Iterator wrapper struct (if needed)
+
+For iterators, use same pattern but store iterator pointer:
+
+```c
+typedef struct perl_mj_iter {
+    mj_value_iter *iter;     /* iterator handle */
+} perl_mj_iter_t;
+```
+
+Allocate with `Newxz`, bless scalar ref containing pointer, M_DESTROY calls `mj_value_iter_free()`. On access, check `iter != NULL` before use.
 
 ---
-
 ## File Layout
 
 ```
