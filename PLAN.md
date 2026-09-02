@@ -6,8 +6,8 @@
 |------|--------|-------|
 | `lib/Minijinja.xs` | Stub (~39 lines) | Only `M_new()` and `M_DESTROY()` with TODO bodies |
 | `lib/Minijinja.pm` | Minimal | Just `XSLoader::load()`, no exports, no wrappers |
-| `t/00-basic.t` | 242 lines, broken API | Tests full API using functions that don't exist yet |
-| `t/01-render.t` | 31 lines, OO style | Calls `$mj_env->add_template()` etc. — methods don't exist |
+| `t/00-basic.t` | 242 lines, broken API | Tests full API using functions that don't exist yet — rewrite needed |
+| `t/01-render.t` | 31 lines, OO style | Calls `$mj_env->add_template()` etc. — methods don't exist — rewrite needed |
 | `t/00-load.t` | 21 lines, OK | Basic load test — minor changes only |
 | `minijinja/` | Built ✅ | Library at `./minijinja/target/release/libminijinja_cabi.so` |
 
@@ -16,165 +16,167 @@
 ## Architecture Decisions
 
 ### 1. No heavy OO hierarchy
-Bless a scalar ref to a heap-allocated wrapper struct (most that you need). All XSUBs are functional-style: `Minijinja::render_template($env, $name, $ctx)`.
+Bless a scalar ref to an env pointer for cleanup tracking (`$env`). All XSUBs are functional-style: `Minijinja::render_template($env, $name, %ctx?)`.
 
-### 2. mj_value boxing
-Since `mj_value` is an opaque struct passed by copy (not pointer), we allocate a heap wrapper containing the actual value + validity flag. Each blessed SV holds an integer ID into a global HV mapping to the allocated struct. DESTROY callbacks free and clean up automatically. Double-free protection via validity flag.
+### 2. Plain Perl types everywhere — auto-conversion is invisible
+**This is the biggest change.** The user passes plain Perl scalars, hashrefs, arrayrefs directly to XS. Internally, XS converts them to/from `mj_value` automatically and invisibly. Users never call creation or query functions — the conversion happens transparently in render/template/eval/call paths.
 
-### 3. Getter storage for CABI-missing getters
-The CABI header has no getters for debug mode, fuel limit, recursion limit, etc. We store these values in a Perl HV keyed by env pointer address.
+Input (Perl → mj_value):
+- Scalar string → `mj_value_new_string()`
+- Scalar int → `mj_value_new_i64()`  
+- Scalar float → `mj_value_new_f64()`
+- Undef → undefined value
+- Arrayref → list (recursively convert each element)
+- Hashref → map/object (iterate keys, recursively convert values)
 
-### 4. Flexible undef-safe API
-Every XSUB handles undef input gracefully: returns sensible defaults (0, undef, false, empty string) instead of crashing. Callers don't need to check before calling.
+Output (mj_value → Perl):
+- String → Perl scalar (UTF-8 marked if needed)
+- Number → Perl int or float
+- Bool → Perl true/false
+- Undefined/None → undef
+- List → arrayref (recursively unwrap elements)
+- Map/Object → hashref (recursively unwrap values)
+
+No exported functions for value creation, no exported value query/accessors (`value_is_true`, `value_kind`, etc.). These are internal implementation details of the conversion layer.
+
+### 3. No explicit `free()` needed
+`M_DESTROY` handles cleanup when the blessed env ref goes out of scope. Perl garbage collection takes care of it:
+
+```perl
+{ my $env = Minijinja::new(); ... } # M_DESTROY fires here automatically
+```
+
+Users can also let `$env` simply fall out of scope naturally — no explicit free call required.
+
+### 4. Context as hashref or plain key-value pairs
+Instead of manually constructing mj_value objects and calling `set_key` XSUBs:
+
+```perl
+# Before (old approach — removed):
+my $ctx = Minijinja::value_new_object();
+Minijinja::value_set_key($ctx, 'name', Minijinja::value_new_string('World'));
+render_template($env, 'hello', $ctx);
+
+# After (new approach):
+render_template($env, 'hello', { name => 'World' });
+```
+
+Hashrefs with string keys pass through auto-conversion to an mj_value object internally. XS loops over the hash keys/values automatically.
 
 ### 5. Callback registration pattern
-Store Perl coderef userdata in a global HV keyed by unique callback ID. The C callback wrapper looks up the coderef, converts `mj_value* args` → Perl scalars, calls the coderef, then converts return value back to `mj_value`.
+Store Perl coderef userdata in a global HV keyed by unique callback ID. The C callback wrapper looks up the coderef, converts `mj_value* args` → Perl scalars via the auto-conversion layer, calls the coderef, then converts return value back to mj_value via auto-conversion.
 
 ---
 
 ## Phase 1: XS Implementation (`lib/Minijinja.xs`)
 
-### 1a. Environment management
+### Internal Conversion Helpers (NOT exported — used internally only)
+
+These are static C functions called by rendering/callback/template functions:
+
+| Function | Purpose | Notes |
+|----------|---------|-------|
+| `perl_to_mj_value(SV *sv)` | Converts any Perl type to mj_value | Scalar → string/int/float/undefined; arrayref → list (recursive); hashref → map/object (recursive). Handles undef gracefully. |
+| `mj_value_to_perl(mj_value val)` | Converts any mj_value to appropriate Perl type | Returns newly created SV. String → scalar PV; number → IV/NV; bool → boolean; undefined → undef; list → new arrayref (recursive); map → new hashref (recursive). |
+
+These are **not XSUBs** — they're plain C helper functions called from within XSUB implementations. Users never see or call them.
+
+### Exported XSUBs
+
+#### Environment management
 
 | XSUB | CABI call | Notes |
 |------|-----------|-------|
-| `new(%opts)` | `mj_env_new()` + setters | Blessed `Minijinja::Env` containing `mj_env*`; optional `%opts` hash sets config flags on creation |
-| `free($env)` | `mj_env_free()` | Explicit free; also via DESTROY |
-| `DESTROY(env)` | implicit | Calls `mj_env_free(THIS(sv))` if valid flag set |
+| `new(%opts)` | `mj_env_new()` + setters | Returns blessed `Minijinja::Env` scalar ref containing `mj_env*` pointer. Optional `%opts` hash applies config on creation. DESTROY via M_DESTROY handles cleanup automatically — no explicit free needed. |
 
-### 1b. Template management
+M_DESTROY is registered in XS BOOT section: when the blessed env ref's refcount drops to zero, it calls `mj_env_free()`.
 
-| XSUB | CABI call | Notes |
-|------|-----------|-------|
-| `add_template($env, $name, $source)` | `mj_env_add_template()` | Returns bool |
-| `remove_template($env, $name)` | `mj_env_remove_template()` | Returns bool |
-| `clear_templates($env)` | `mj_env_clear_templates()` | Returns bool |
-
-### 1c. Rendering
+#### Template management
 
 | XSUB | CABI call | Notes |
 |------|-----------|-------|
-| `render_template($env, $name, $ctx?)` | `mj_env_render_template()` | If `$ctx` is undef → create empty object internally; returns string or undef+sets error; caller doesn't need to free returned char* (it's freed internally) |
-| `render_str($env, $name, $source, $ctx?)` | `mj_env_render_named_str()` | Same undef handling as above; returns owned string or undef+error |
-| `eval_expr($env, $expr, $ctx?)` | `mj_env_eval_expr()` | Returns blessed mj_value wrapper (or undefined value on error); ctx same undef handling |
+| `add_template($env, $name, $source)` | `mj_env_add_template()` | Returns true/false. Simple passthrough. |
+| `remove_template($env, $name)` | `mj_env_remove_template()` | Returns true/false. |
+| `clear_templates($env)` | `mj_env_clear_templates()` | Returns true/false. |
 
-**Error handling for render functions**: On failure, set a thread-local error flag via CABI, return undef from Perl side. User can query error via `error_detail()`, etc.
+#### Rendering (core functionality)
 
-### 1d. Value creation (all return blessed Minijinja::Value with heap-allocated wrapper struct)
-
-All accept optional args with safe undef defaults:
-
-| XSUB | CABI call | Undef behavior |
-|------|-----------|----------------|
-| `value_new_string($s?)` | `mj_value_new_string()` | undef → undefined value |
-| `value_new_i64($n?)` | `mj_value_new_i64()` | undef → none value |
-| `value_new_f64($f?)` | `mj_value_new_f64()` | undef → none value |
-| `value_new_bool($b?)` | `mj_value_new_bool()` | undef → false (0) |
-| `value_new_list()` | `mj_value_new_list()` | N/A |
-| `value_new_object()` | `mj_value_new_object()` | N/A |
-| `value_new_none()` | `mj_value_new_none()` | N/A |
-| `value_new_undefined()` | `mj_value_new_undefined()` | N/A |
-
-### 1e. Value queries/accessors
-
-| XSUB | CABI call | Undef handling |
-|------|-----------|----------------|
-| `value_kind($v?)` | `mj_value_get_kind()` | Returns -1 for undef; returns enum int otherwise |
-| `value_is_true($v?)` | `mj_value_is_true()` | Returns false for undef/non-true values |
-| `value_as_i64($v?)` | `mj_value_as_i64()` | Returns 0 for undef/non-numeric; coerces floats to int |
-| `value_as_f64($v?)` | `mj_value_as_f64()` | Returns 0.0 for undef/non-numeric; coerces ints to float |
-| `value_to_string($v?)` | `mj_value_to_str()` + frees internally | Returns Perl string or undef (if not convertible); handles mj_str_free() automatically — caller never needs to free |
-| `value_len($v?)` | `mj_value_len()` | Returns 0 for undef/non-container types |
-
-### 1f. Container operations
+These use auto-conversion for context parameters and return values:
 
 | XSUB | CABI call | Notes |
 |------|-----------|-------|
-| `value_set_key($obj, $key, $val)` | `mj_value_set_string_key()` | `$key` is a Perl string, auto-converted to mj_value via new_string() internally; returns bool |
-| `value_get_key($obj, $key)` | `mj_value_get_by_str()` | Returns blessed value wrapper or undef if key not found/value is undefined |
-| `value_append($list, $val)` | `mj_value_append()` | Returns bool (false on error) |
-| `value_get_index($container, $idx)` | `mj_value_get_by_index()` | Returns blessed value wrapper or undef out-of-bounds/undefined value |
+| `render_template($env, $name, %ctx?)` | `mj_env_render_template()` | `%ctx?` is optional hashref passed as template variables. If omitted or empty, renders with no context (no errors). Returns rendered string or undef on error (error info available via error_* functions). Auto-converts hashref keys/values to mj_value internally. |
+| `render_str($env, $name, $source, %ctx?)` | `mj_env_render_named_str()` | Inline template rendering. Same ctx handling as above. Returns string or undef+error. |
+| `eval_expr($env, $expr, %ctx?)` | `mj_env_eval_expr()` | Evaluate a minijinja expression. %ctx is optional variable binding hashref. Returns plain Perl value — auto-unwrapped from mj_value (scalar/string/number/bool/arrayref/hashref depending on result type), or undef on error. |
 
-### 1g. Iterators
+**Context parameter format:** `{ key1 => 'value1', key2 => 42 }`. XS converts this hashref to an mj_object by looping over keys and converting each value through `perl_to_mj_value()`. This happens transparently in the render/eval XSUB implementations.
+
+#### Globals
 
 | XSUB | CABI call | Notes |
 |------|-----------|-------|
-| `try_iter($v?)` | `mj_value_try_iter()` | Blessed `Minijinja::Iter` containing iterator pointer; undef if value not iterable or undef input |
-| `iter_next($iter)` | `mj_value_iter_next()` | **Simplified API** — just return the next element as blessed value or undef at end. No out-buffer parameter needed (that was a C pattern awkward in Perl). DESTROY callback frees iterator. |
+| `add_global($env, $name, $value)` | `mj_env_add_global()` | `$value` is any plain Perl type — auto-converted to mj_value by internal helper. Takes ownership per CABI spec. Returns true/false. |
 
-### 1h. Globals and configuration
+#### Configuration setters/getters
 
-| XSUB | CABI call | Getter? | Notes |
-|------|-----------|---------|-------|
-| `add_global($env, $name, $val)` | `mj_env_add_global()` | N/A (takes ownership of `$val`) |
-| `set_debug($env, $bool)` / `get_debug($env)` | CABI only has setter | Yes — stored in env config HV |
-| `set_fuel($env, $n)` / `get_fuel($env)` | CABI only has setter + clearer | Yes — stored in env config HV; `clear_fuel()` also updates stored value to 0 |
+CABI only provides setters for these; getters stored in Perl-side HV keyed by env pointer:
+
+| Setter / Getter pair | CABI setter | Stored state |
+|---------------------|-------------|--------------|
+| `set_debug($env, $bool)` / `get_debug($env)` | `mj_env_set_debug()` | Boolean in config map |
+| `set_fuel($env, $n)` / `get_fuel($env)` | `mj_env_set_fuel()` | Integer in config map; `clear_fuel()` also updates stored value to 0 |
 | `clear_fuel($env)` | `mj_env_clear_fuel()` | Updates stored value to 0 |
-| `set_recursion_limit($env, $n)` / `get_recursion_limit($env)` | CABI only has setter | Yes — stored in env config HV |
-| `set_trim_blocks($env, $bool)` / `get_trim_blocks($env)` | CABI only has setter | Yes — stored in env config HV |
-| `set_lstrip_blocks($env, $bool)` / `get_lstrip_blocks($env)` | CABI only has setter | Yes — stored in env config HV |
-| `set_keep_trailing_newline($env, $bool)` / `get_keep_trailing_newline($env)` | CABI only has setter | Yes — stored in env config HV |
-| `set_undefined_behavior($env, $mode)` / `get_undefined_behavior($env)` | Both available (getter from stored state) | Stored in env config HV; mode is 0/1/2 matching enum values |
+| `set_recursion_limit($env, $n)` / `get_recursion_limit($env)` | `mj_env_set_recursion_limit()` | Integer in config map |
+| `set_trim_blocks($env, $bool)` / `get_trim_blocks($env)` | `mj_env_set_trim_blocks()` | Boolean in config map |
+| `set_lstrip_blocks($env, $bool)` / `get_lstrip_blocks($env)` | `mj_env_set_lstrip_blocks()` | Boolean in config map |
+| `set_keep_trailing_newline($env, $bool)` / `get_keep_trailing_newline($env)` | `mj_env_set_keep_trailing_newline()` | Boolean in config map |
+| `set_undefined_behavior($env, $mode)` / `get_undefined_behavior($env)` | `mj_env_set_undefined_behavior()` | Integer (0/1/2) in config map — no CABI getter so we store it ourselves |
 
-**Env config storage**: Global HV `%ENV_CONFIGS` keyed by stringified `mj_env*` address. Each entry is a hashref with keys: debug, fuel, recursion_limit, trim_blocks, lstrip_blocks, trailing_newline, undefined_behavior.
+**Config storage**: Global HV `%ENV_CONFIGS` keyed by stringified `mj_env*` address. Each entry is a hashref: `{ debug => bool, fuel => int, recursion_limit => int, trim_blocks => bool, lstrip_blocks => bool, trailing_newline => bool, undefined_behavior => int }`.
 
-### 1i. Syntax configuration
+#### Custom callbacks (filters, functions, tests)
 
-Two approaches available (both implemented):
+| XSUB | CABI call | Notes |
+|------|-----------|-------|
+| `add_filter($env, $name, \&coderef)` | `mj_env_add_filter()` | Returns true/false. Stores coderef in global HV `%CB_DATA` with unique ID derived from env pointer + callback type + counter. On env DESTROY, clean up entries matching that env pointer. Callback wrapper: receives args as Perl scalars via auto-conversion → calls coderef → converts return value to mj_value via auto-conversion. |
+| `add_function($env, $name, \&coderef)` | `mj_env_add_function()` | Same pattern as filter. |
+| `add_test($env, $name, \&coderef)` | `mj_env_add_test()` | Same pattern as filter. Test callbacks receive the test subject as first arg and return boolean. |
 
-**A. Convenience inline** — single XSUB that builds syntax config internally and applies it:
+**Callback argument conversion**: When minijinja invokes our registered callback with `const mj_value* args`, we iterate over each arg and convert it using the internal `mj_value_to_perl()` helper, producing a list of plain Perl scalars/refs. These are pushed onto the Perl stack for `call_sv()`. The return value is converted back through `perl_to_mj_value()`.
+
+#### Syntax configuration
+
+Only inline approach needed (explicit handle management removed — unnecessary complexity):
+
 ```perl
-apply_syntax($env, %opts)  # opts = block_start => '<%', variable_start => '<$', ... etc.
-```
-Unspecified keys get defaults from `mj_syntax_config_default()`. No explicit handle needed.
-
-**B. Explicit handle management** (matches test file style):
-```perl
-$syntax = syntax_new()                  # blessed wrapper with heap-allocated mj_syntax_config*
-syntax_block_start($syntax, $str)       # sets field
-syntax_block_end($syntax, $str)         # sets field
-# ... all 8 fields have setters ...
-env_set_syntax_config($env, $syntax)    # applies to environment
-syntax_free($syntax)                    # frees struct
+apply_syntax($env, %opts)  # opts = { block_start => '<%', variable_start => '<$', ... }
 ```
 
-Both exported; tests can use either approach.
+| XSUB | CABI call | Notes |
+|------|-----------|-------|
+| `apply_syntax($env, %opts)` | `mj_env_set_syntax_config()` + `mj_syntax_config_default()` | Build syntax config internally from `%opts` hash, filling unspecified fields with defaults from `mj_syntax_config_default()`, then apply to env. No explicit handle or free needed. Unrecognized keys in `%opts` are silently ignored. Fields: block_start, block_end, variable_start, variable_end, comment_start, comment_end, line_statement_prefix, line_comment_prefix. All optional strings. |
 
-### 1j. Custom callbacks (filters, functions, tests)
+#### Callback-based environment configuration
 
 | XSUB | CABI call | Notes |
 |------|-----------|-------|
-| `add_filter($env, $name, \&coderef)` | `mj_env_add_filter()` | Returns bool on success; stores coderef in global HV keyed by unique ID; callback wrapper converts args → Perl scalars, calls coderef, converts return → mj_value |
-| `add_function($env, $name, \&coderef)` | `mj_env_add_function()` | Same pattern |
-| `add_test($env, $name, \&coderef)` | `mj_env_add_test()` | Same pattern |
+| `set_loader($env, \&coderef)` | `mj_env_set_loader()` | Returns true/false. Wrapper receives template name string, calls coderef, returns strdup'd result (minijinja frees via mj_str_free). Coderef returns template source string or undef if not found. |
+| `set_auto_escape($env, \&coderef)` | `mj_env_set_auto_escape_callback()` | Returns true/false. Wrapper receives template name, calls coderef, returns MJ_AUTO_ESCAPE_NONE or MJ_AUTO_ESCAPE_HTML. Coderef returns 'html' or '' (or any truthy/falsy value). |
+| `set_path_join($env, \&coderef)` | `mj_env_set_path_join_callback()` | Returns true/false. Wrapper receives `(name, parent)`, calls coderef, returns strdup'd result. |
 
-**Callback conversion details**:
-- Args: convert each `const mj_value*` to Perl scalar by checking kind — string → `value_to_string()`, number → `value_as_i64()` or `value_as_f64()`, bool → true/false, undefined/none → undef, container → warn and pass as string representation
-- Return value: check type — Perl string → `new_string()`, int → `new_i64()`, float → `new_f64()`, undef → `new_undefined()`, error → set CABI error via `mj_err_*` functions
+**Callback userdata storage**: Global HV `%CB_DATA` with key = unique integer ID derived from env pointer + callback type index. Each entry maps to a hashref: `{ code => <SV* coderef> }`. On env DESTROY (M_DESTROY), scan %CB_DATA for keys matching this env's prefix and remove them.
 
-### 1k. Loader/auto_escape/path_join callbacks
+#### Error handling
 
 | XSUB | CABI call | Notes |
 |------|-----------|-------|
-| `set_loader($env, \&coderef)` | `mj_env_set_loader()` | Returns bool; wrapper receives `(Perl_str)`, calls coderef with template name, returns `strdup()`'ed result (minijinja will free it via `mj_str_free`) |
-| `set_auto_escape($env, \&coderef)` | `mj_env_set_auto_escape_callback()` | Returns bool; wrapper calls coderef with template name, returns MJ_AUTO_ESCAPE_NONE or MJ_AUTO_ESCAPE_HTML |
-| `set_path_join($env, \&coderef)` | `mj_env_set_path_join_callback()` | Returns bool; wrapper receives `(name, parent)`, calls coderef, returns `strdup()`'d result |
-
-**Callback userdata**: Each registered callback gets a unique ID stored in global HV `%CALLBACKS`. The void* userdata pointer is cast to this ID. Free function (if provided by CABI for cleanup) removes from HV. For simplicity: register all callbacks without free funcs and let them clean up when env is freed (we can walk %CALLBACKS and remove entries whose ID prefix matches the env address).
-
-Actually simpler: store callbacks in an HV keyed by env pointer, with sub-hashes for filter/function/test/loader/auto_escape/path_join namespaces. On env DESTROY, remove those entries.
-
-### 1l. Error handling
-
-| XSUB | CABI call | Notes |
-|------|-----------|-------|
-| `error_exists()` | `mj_err_is_set()` | Returns true/false |
-| `error_detail()` | `mj_err_get_detail()` + frees internally | Returns string or undef; frees C string automatically |
-| `error_debug_info()` | `mj_err_get_debug_info()` + frees internally | Returns string or undef; frees C string automatically |
-| `error_kind()` | `mj_err_get_kind()` → enum int | Returns integer or -1 if no error |
-| `error_line()` | `mj_err_get_line()` → uint32_t | Returns int or 0 if no error |
-| `error_template_name()` | `mj_err_get_template_name()` + frees internally | Returns string or undef; frees C string automatically |
-| `error_print()` | `mj_err_print()` | Prints to stderr via CABI; returns bool (true on success) |
+| `error_exists()` | `mj_err_is_set()` | Returns 1/0 |
+| `error_detail()` | `mj_err_get_detail()` + frees internally | Returns error detail string or undef. Frees C string automatically — caller never needs to free. |
+| `error_debug_info()` | `mj_err_get_debug_info()` + frees internally | Returns debug info string or undef. Frees automatically. |
+| `error_kind()` | `mj_err_get_kind()` → enum int | Returns integer kind or -1 if no error. Kinds map to numeric values from mj_err_kind enum. |
+| `error_line()` | `mj_err_get_line()` → uint32_t | Returns line number or 0 if no error. |
+| `error_template_name()` | `mj_err_get_template_name()` + frees internally | Returns template name string or undef. Frees automatically. |
+| `error_print()` | `mj_err_print()` | Prints error to stderr via CABI. Returns true/false. |
 
 ---
 
@@ -186,15 +188,19 @@ Current file is minimal (10 lines). Changes needed:
 2. Add convenience wrapper for `new(%opts)` that chains env creation with config setters
 3. Add basic POD documentation stub
 
-Example exports:
+Exported functions:
 ```perl
-use Exporter 'import';
 our @EXPORT_OK = qw(
-    new free
+    new
+    
     add_template remove_template clear_templates
+    
     render_template render_str eval_expr
+    
     add_global
+    
     add_filter add_function add_test
+    
     set_debug get_debug
     set_fuel get_fuel clear_fuel
     set_recursion_limit get_recursion_limit
@@ -202,186 +208,147 @@ our @EXPORT_OK = qw(
     set_lstrip_blocks get_lstrip_blocks
     set_keep_trailing_newline get_keep_trailing_newline
     set_undefined_behavior get_undefined_behavior
-    apply_syntax env_set_syntax_config syntax_new
-    syntax_block_start syntax_block_end syntax_variable_start syntax_variable_end
-    syntax_comment_start syntax_comment_end syntax_line_statement_prefix syntax_line_comment_free
+    
+    apply_syntax
+    
     set_loader set_auto_escape set_path_join
-    error_exists error_detail error_debug_info error_kind error_line error_template_name error_print
-    value_new_string value_new_i64 value_new_f64 value_new_bool
-    value_new_list value_new_object value_new_none value_new_undefined
-    value_free value_kind value_is_true value_as_i64 value_as_f64
-    value_to_string value_len
-    value_set_key value_get_key value_append value_get_index
-    try_iter iter_next
+    
+    error_exists error_detail error_debug_info 
+    error_kind error_line error_template_name error_print
 );
 ```
 
-Convenience `new(%opts)` wrapper: creates env, then conditionally applies config options from `%opts` hash (e.g., `{ debug => 1, trim_blocks => 0 }`).
+Convenience `new(%opts)` in Perl wrapper: creates environment, then conditionally applies configuration options from the `%opts` hash before returning the blessed env handle.
 
 ---
 
 ## Phase 3: Rewrite Tests
 
 ### `t/00-load.t` — minimal changes
-- Keep structure as-is (load test)
+- Keep structure as-is (basic load test)
 - Update test count to match actual tests run
-- Add `use_ok('Minijinja', '@EXPORT_OK')` or just keep simple `use_ok('Minijinja')`
 
-### `t/01-render.t` — rewrite (~20 tests)
-Functional API smoke tests for the most common workflow:
+### `t/01-render.t` — rewrite (~8-12 tests)
+Functional API smoke tests for the most common rendering workflow:
 
 ```perl
 use strict; use warnings;
 use Test::More;
 use Minijinja qw(new add_template render_template render_str 
-                  value_new_object value_set_key value_new_string free);
+                  error_exists error_detail);
 
-# Smoke test: environment creation
-my $env = Minijinja::new();
+# Smoke test: environment creation and destruction (no explicit free needed)
+my $env = new();
 ok($env, 'environment created');
 
-# Smoke test: template registration + rendering with context
-my $ctx = Minijinja::value_new_object();
-Minijinja::value_set_key($ctx, 'name', Minijinja::value_new_string('World'));
-Minijinja::add_template($env, 'hello', 'Hello {{ name }}!');
-is(Minijinja::render_template($env, 'hello', $ctx), 'Hello World!', 'basic render');
+# Smoke test: template registration + rendering with hashref context
+add_template($env, 'hello', 'Hello {{ name }}!');
+is(render_template($env, 'hello', { name => 'World' }), 'Hello World!', 'basic render');
 
 # Smoke test: inline template rendering  
-is(Minijinja::render_str($env, 'inline.pl', '{{ greeting }}!', $ctx), 'Hi there!', 'inline render');
+is(render_str($env, 'inline.pl', '{{ greeting }}!', { greeting => 'Hi!' }), 'Hi there!', 'inline render');
 
-# Cleanup
-Minijinja::free($env);
-Minijinja::value_free($ctx);
-
+# No cleanup needed — DESTROY on $env handles it automatically when it falls out of scope
 done_testing();
 ```
 
-### `t/02-api.t` — comprehensive (~100+ tests)
-Replaces old `t/00-basic.t`. Organized by section with SKIP blocks for optional features that depend on library availability.
+### `t/02-api.t` — comprehensive but simplified (~70-80 tests total)
+Replaces old `t/00-basic.t`. Organized by feature section. SKIP blocks handle optional features that depend on library availability.
 
-Sections:
-1. **Environment** (8-10 tests): new, free, add/remove/clear templates
-2. **Value creation** (12 tests): all 8 creators + basic sanity checks
-3. **Value queries** (15 tests): kind, is_true, as_i64, as_f64, to_string, len on various types
-4. **Containers** (15 tests): set/get key, append, get_index on lists and objects
-5. **Iterators** (8 tests): try_iter, iter_next — simplified return-based API
-6. **Globals** (6 tests): add_global, remove_global, verify in template rendering
-7. **Config setters/getters** (16 tests): debug, fuel, recursion_limit, trim_blocks, lstrip_blocks, trailing_newline, undefined_behavior
-8. **Syntax config** (8 tests): both inline apply_syntax and explicit handle approaches
-9. **Custom filters/functions/tests** (12 tests): register + use in template rendering
-10. **Callbacks** (8 tests): loader, auto_escape, path_join callbacks used in rendering
-11. **Error handling** (10 tests): error_exists after failure, detail/debug_info/kind/line/template_name/print
+Sections and test counts:
 
-### `t/03-integration.t` — edge cases (~15-20 tests)
-- Invalid templates (syntax errors) → check error_detail/error_kind
-- Missing template name rendering → check error
-- Empty strings, empty containers
-- Nested containers and iteration
-- Multiple contexts and variable shadowing
-- Numeric type coercion edge cases
+1. **Environment** (5 tests): new returns blessed ref, config options in `%opts`, M_DESTROY fires on undef
+2. **Template management** (6 tests): add/remove/clear templates, verify errors on duplicate/missing names
+3. **Rendering basics** (10 tests): named templates with various context shapes (empty ctx, single var, multiple vars, nested hashes), inline rendering with variables
+4. **Expression evaluation** (8 tests): eval_expr with simple expressions (`1+2`, `'a' ~ 'b'`, boolean ops), eval_expr with context bindings, auto-unwrapped return types (numbers, strings, booleans, lists as arrayrefs, maps as hashrefs)
+5. **Globals** (6 tests): add_global with scalar values, add_global with complex values (hashref/arrayref), verify globals accessible in templates, remove_template interaction, global override vs context precedence
+6. **Config setters/getters** (14 tests): each setter/getter pair tested independently — set value, get it back; default values verified; edge cases (zero fuel, max recursion limit, etc.)
+7. **Custom filters/functions/tests** (12 tests): register filter → use `{{ x | upper }}` in template; register function → use `{{ greet("World") }}`; register test → use `{% if n is even %}`; callback receives correct Perl types; callback returns correct types; undefined behavior for wrong arg counts
+8. **Syntax config** (4 tests): apply custom block/variable/comment delimiters, render template using custom syntax, defaults when no opts passed
+9. **Callback-based loaders** (6 tests): set_loader returning static content, loader called with correct template name, loader returning undef for missing template, chained template loading
+10. **Error handling** (8 tests): error_exists after failure scenarios, error_detail contains useful message, error_kind identifies type (syntax error/not found/etc.), error_line gives correct line number, error_template_name identifies which template failed
+
+### `t/03-integration.t` — edge cases and realistic usage (~15-20 tests)
+- Recursive/nested data structures: hashref containing arrayrefs containing more hashrefs → auto-conversion handles nesting depth correctly
+- Empty containers: empty list/arrayref, empty map/hashref
+- Type coercion at rendering time: passing int where string expected, etc.
+- Multiple envs coexisting: create two separate envs, each with own templates/globals/callbacks
+- Callback interaction: filter that calls another filter, function that uses context variables
+- Large contexts: 20+ variable bindings in single render call
+- Unicode strings through the pipeline
 
 ---
 
 ## Implementation Order
 
-Build incrementally so each chunk compiles and can be tested:
+Build incrementally so each chunk compiles and can be tested independently:
 
-1. **Environment**: `new`, `free`, `DESTROY` → test with `t/00-load.t` modified to actually create env
-2. **Value creators**: All 8 new_* functions → test basic creation
-3. **Value queries**: kind, is_true, as_i64/f64, to_string, len → test on created values
-4. **Container ops**: set_key, get_key, append, get_index → test list/object manipulation  
-5. **Iterators**: try_iter, iter_next → test iterating over lists/objects
-6. **Template management**: add/remove/clear templates
-7. **Rendering**: render_template, render_str, eval_expr → smoke test full pipeline
-8. **Globals**: add_global, remove_global + config setters/getters
-9. **Callbacks**: filter/function/test registration + loader/auto_escape/path_join
-10. **Syntax config**: both approaches
-11. **Error handling**: all mj_err_* wrappers
-12. **Value free/decref** with safe double-free protection (IV flag)
+1. **Environment**: `new()` + M_DESTROY via XS BOOT section → test with t/00-load.t modified to actually create env
+   - Verify blessed ref is returned, M_FREE fires on undef
+   
+2. **Internal conversion helpers**: Static C functions `perl_to_mj_value()` and `mj_value_to_perl()`
+   - Not exported XSUBs — just internal utilities. Test by building them into the environment code.
 
-Each step compiles independently — run `perl Makefile.PL && make` after every batch.
+3. **Template management**: add/remove/clear templates → verify with simple add_template call (no rendering yet)
+
+4. **Rendering**: render_template, render_str, eval_expr using the conversion helpers for ctx parameters
+   - This is the big integration step — template registration + auto-conversion of hashref context + rendering + auto-unwrapping of results
+   - Smoke test basic "Hello {{ name }}!" rendering
+
+5. **Globals**: add_global + config setters/getters
+   - Add a global variable, verify it's accessible in templates
+   - Set debug mode, get it back
+
+6. **Callbacks**: filter/function/test registration + wrapper logic
+   - Register a filter, use it in a template; register function, call it from template
+   - The callback wrapper is the trickiest part — converting mj_value args ↔ Perl scalars through auto-conversion
+
+7. **Syntax config application**: apply_syntax inline approach
+
+8. **Loader/auto_escape/path_join callbacks**
+
+9. **Error handling**: all error_* wrappers
+
+Each step: `perl Makefile.PL && make` and check for compilation errors before moving on.
 
 ---
 
 ## Wrapper Struct Design
 
 ```c
-/* Value wrapper — heap-allocated box for mj_value */
-typedef struct perl_mj_value {
-    mj_value val;       /* actual minijinja value */
-    int valid;          /* 1 = alive, 0 = already freed (safe no-op on free) */
-} perl_mj_value_t;
-
-/* Env wrapper — blessed scalar containing mj_env* pointer */
-/* Already standard: bless SV ref to IV holding mj_env* cast as void* */
-
-/* Iterator wrapper */
-typedef struct perl_mj_iter {
-    mj_value_iter *iter;   /* iterator handle */
-    int valid;             /* validity flag */
-} perl_mj_iter_t;
-
-/* Syntax config wrapper */
-typedef struct perl_syntax {
-    mj_syntax_config config;  /* the struct itself (not pointer) */
-    int valid;                 /* validity flag */
-} perl_syntax_t;
+/* Env handle — blessed scalar ref containing mj_env* pointer */
+/* Standard XS pattern: bless SV, store pointer as IV */
+typedef struct perl_mj_env {
+    mj_env *env;           /* actual minijinja environment pointer */
+    int valid;             /* 1 = alive, 0 = already freed (double-free protection) */
+} perl_mj_env_t;
 ```
 
-### XS Helper Macros
+For env handles, we bless a scalar whose RV contains an IV pointing to the wrapper struct. When M_DESTROY fires (refcount reaches zero), we check valid flag, call `mj_env_free()`, set valid=0, free struct. Double-free becomes safe no-op.
 
+XS BOOT section registers DESTROY callback for the `Minijinja::Env` package name:
 ```c
-#define NEW_VALUE() \
-    ST(0) = sv_newmortal(); \
-    perl_mj_value_t *pv = malloc(sizeof(*pv)); \
-    if (!pv) croak("malloc failed"); \
-    pv->valid = 1; \
-    SvROK_on(ST(0)); SvRV(ST(0)) = (SV*)pv; SvTYPE_set((SV*)SvRV(ST(0)), SV_PVMG); \
-    sv_bless(ST(0), gv_stashpv("Minijinja::Value", GV_AUTO));
-
-#define VALUE_PTR(sv, label) \
-    (!THISSvOK(sv) || !SvIV(SvRV(sv))) \
-        ? (croak("%s: value argument must be a blessed Minijinja::Value", label), (perl_mj_value_t*)NULL) \
-        : !(INT2PTR(perl_mj_value_t*, SvIV(SvRV(sv))))->valid \
-            ? (croak("%s: value already freed", label), (perl_mj_value_t*)NULL) \
-            : INT2PTR(perl_mj_value_t*, SvIV(SvRV(sv)));
-
-#define ENV_PTR(sv, label) (...) /* similar pattern for env handles */
-```
-
-Actually, the macro approach above is getting messy. Let me use a cleaner XS pattern where the blessed scalar's RV points directly to the struct — standard XS `sv_setsv` + `sv_upgrade` approach:
-
-```c
-/* Clean creation of blessed value wrapper */
-static SV* new_sv_value() {
-    perl_mj_value_t *pv = malloc(sizeof(*pv));
-    if (!pv) croak("malloc failed");
-    pv->valid = 1;
-    
-    SV *sv = sv_newmortal();
-    sv_bless(sv, gv_stashpv("Minijinja::Value", GV_ADD));
-    sv_setiv(sv, PTR2IV(pv));
-    return sv;
-}
-
-/* Safe extraction */
-static perl_mj_value_t* extract_value(SV *sv) {
-    if (!sv || !SvROK(sv)) return NULL;
-    SV *rv = SvRV(sv);
-    if (!SvIOK(rv)) return NULL;
-    perl_mj_value_t *pv = INT2PTR(perl_mj_value_t*, SvIV(rv));
-    if (pv && pv->valid) return pv;
-    return NULL;  /* already freed or invalid */
+BOOT: {
+    sv_setiv(ST(0), PTR2IV(pv));  // set pointer in blessed SV
+    // ... register gv_stashpv("Minijinja::Env") with mg_get/DESTROY ...
 }
 ```
 
-This is much cleaner. The SV itself holds the pointer as an IV. DESTROY on the SV calls free cleanup. No global HV needed for values!
+Actually the standard XS way is simpler — use the `M_` prefix convention and let ExtUtils::xsubpp handle it:
 
-For env handles: similar pattern — bless scalar ref, store `mj_env*` as IV.
+```xs
+void M_DESTROY(SV *sv)
+    CODE:
+        dTHX;
+        if (!THISSvOK(sv)) return;
+        perl_mj_env_t *pe = INT2PTR(perl_mj_env_t*, SvIV(SvRV(sv)));
+        if (!pe->valid) return;  // already freed
+        pe->valid = 0;
+        mj_env_free(pe->env);
+        Safefree(pe);
+```
 
-For callbacks: we DO need a global HV because the CABI passes back `void* userdata` and we need to look up the Perl coderef. Structure: `%CALLBACK_MAP` keyed by `(env_ptr . "_" . callback_type . "_" . index)` → coderef SV*. On env free, iterate keys matching env prefix and delete entries + clear registrations via... hmm, the CABI doesn't expose a way to unregister callbacks. So we just leave stale entries in %CALLBACK_MAP — memory leak of XS level but negligible. Alternatively, we could wrap each mj_value in a struct that stores a reference to its parent env so we can clean up on DESTROY. But minijinja's value structs are opaque — we can't attach metadata to them natively.
-
-Simplification: use a single global HV `%CB_DATA` with key = unique integer ID, value = `{ code => <coderef>, env => <env_ptr> }`. On env DESTROY, scan %CB_DATA and remove entries whose env matches. This is clean enough.
+No need for explicit BOOT registration — XSUBs with `_DESTROY` suffix are automatically detected by XS loader as finalizers when the package name matches.
 
 ---
 
@@ -389,13 +356,21 @@ Simplification: use a single global HV `%CB_DATA` with key = unique integer ID, 
 
 ```
 lib/Minijinja.pm    — updated with @EXPORT_OK, convenience wrappers, POD stub
-lib/Minijinja.xs    — complete implementation (~600-800 lines)
+lib/Minijinja.xs    — complete implementation (~350-450 lines)
 t/00-load.t         — load test (minor change)
-t/01-render.t       — render smoke tests (rewrite, ~25 tests)
-t/02-api.t          — comprehensive API tests (rewrite, ~100+ tests)
-t/03-integration.t  — edge cases and integration scenarios (~15 tests)
+t/01-render.t       — render smoke tests (rewrite, ~10 tests)
+t/02-api.t          — comprehensive API tests (rewrite, ~75 tests)
+t/03-integration.t  — edge cases and integration scenarios (~18 tests)
 PLAN.md             — this file
 ```
+
+**Line count reduction**: From estimated 600-800 lines down to ~350-450 because:
+- No value creation XSUBs (~8 functions removed)
+- No value query/accessor XSUBs (~6 functions removed)  
+- No container operation XSUBs (~4 functions removed)
+- No iterator XSUBs (~2 functions removed)
+- No free() function removed (handled by M_DESTROY)
+- Internal conversion helpers are static C functions, not exported XSUBs
 
 ---
 
@@ -404,7 +379,6 @@ PLAN.md             — this file
 After implementation:
 
 ```bash
-rustup default stable
 export MINIJINJA_SRC=$(pwd)/minijinja
 export LD_LIBRARY_PATH=$(pwd)/minijinja/target/release
 perl Makefile.PL
@@ -412,7 +386,7 @@ make clean && make
 make test   # all t/*.t pass
 ```
 
-Then run individual test files to confirm each section works:
+Then run individual test files:
 ```bash
 PERL5LIB=blib/lib perl -I blib/arch t/01-render.t
 PERL5LIB=blib/lib perl -I blib/arch t/02-api.t  
@@ -425,12 +399,12 @@ PERL5LIB=blib/lib perl -I blib/arch t/03-integration.t
 
 | Risk | Mitigation |
 |------|-----------|
-| C ABI mismatch between minijinja-cabi version and header | Header is from `./minijinja/minijinja-cabi/include/minijinja.h` — build against that exact version. If symbols don't match at link time, error message will be explicit. |
-| Thread safety of callback HV | Use `dTHX` / Perl's threading context; each XS call has its own thread context. The global HV is accessed within the interpreter context which Perl protects. For true MT-safety would need mutex but CPAN modules rarely need that. |
-| Memory leaks from callback closures | Scan and clean up on env DESTROY (walk %CB_DATA by env prefix). |
-| mj_value_to_str returns NULL | Check for NULL before using; return undef from Perl in that case. |
-| Callbacks returning wrong types | Default to undefined value if return type doesn't match expected string/int/bool. Set CABI error with descriptive message. |
-| String encoding (UTF-8) | minijinja uses UTF-8 internally. We pass strings through as-is without byte conversion unless explicitly needed. The C ABI assumes valid UTF-8. Perl strings marked as bytes → convert to UTF-8 before passing to CABI. Strings already UTF-8 → pass through directly. |
+| Auto-conversion of deeply nested structures causes stack overflow or performance issues | Add recursion depth limit in `perl_to_mj_value` and `mj_value_to_perl` (e.g., 64 levels). Log warning if hit. |
+| UTF-8 encoding mismatch between Perl strings and minijinja's internal UTF-8 | Use `SvUTF8(sv)` to detect encoding; ensure strings are properly marked as UTF-8 when passed to CABI. minijinja expects valid UTF-8. |
+| Memory leaks from callback closures not cleaned up on env free | Walk `%CB_DATA` on M_DESTROY, remove entries whose key prefix matches this env pointer. Test with valgrind or similar. |
+| mj_value_to_str returns NULL for some value types | Internal helper checks for NULL before using result; returns undef from Perl side in that case. |
+| Callbacks returning wrong types cause undefined behavior | Auto-conversion handles type mismatches gracefully — unrecognized return types become undefined values. Set CABI error only on actual errors, not type mismatches. |
+| Hash iteration order non-deterministic in Perl | Irrelevant for template rendering — Jinja2/minijinja iterates hash keys in insertion order which is preserved by our conversion. For test assertions, use explicit key access rather than iterating maps. |
 
 ---
 
@@ -438,9 +412,9 @@ PERL5LIB=blib/lib perl -I blib/arch t/03-integration.t
 
 | Phase | Effort | Notes |
 |-------|--------|-------|
-| Phase 1: XS implementation | ~4-6h | Mostly mechanical — one XSUB at a time. Callback handling is the most complex part. |
-| Phase 2: PM update | ~30min | Straightforward Exporter setup + convenience wrapper. |
-| Phase 3: Test rewrite | ~3-4h | Comprehensive but pattern-driven. Most tests follow same structure: setup → action → assertion → cleanup. |
-| Build verification & iteration | ~1-2h | Expected to hit compile errors on first try; fixing those iteratively. |
+| Phase 1: XS implementation (core) | ~3-4h | Simpler than original plan due to removal of value-level XSUBs. Conversion helpers add complexity but are internal-only. |
+| Phase 2: PM update | ~15min | Straightforward Exporter setup + convenience wrapper. |
+| Phase 3: Test rewrite | ~2-3h | Fewer test sections now (~9 instead of 11), fewer total tests (~75 instead of 100+). Pattern-driven. |
+| Build verification & iteration | ~1-2h | Expected compile iterations; fixing those iteratively. |
 
-Total estimated effort: **9-13 hours** of focused work, spread across multiple sessions for compilation verification.
+Total estimated effort: **7-10 hours** of focused work.
