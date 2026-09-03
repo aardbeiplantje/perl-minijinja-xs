@@ -10,8 +10,10 @@ Perl XS bindings wrapping
 [minijinja-cabi](https://github.com/mitsuhiko/minijinja) (Rust template
 engine). Two interfaces work together:
 
-- **XS layer** (`Minijinja.xs`) — XSUB definitions providing low-level access to minijinja CABI
-- **Perl wrapper** (`Minijinja.pm`) — Exporter setup + convenience `new(%opts)` wrapper, loads XS via XSLoader
+- **XS layer** (`Minijinja.xs`) — XSUB definitions providing low-level access
+  to minijinja CABI
+- **Perl wrapper** (`Minijinja.pm`) — Exporter setup + convenience `new(%opts)`
+  wrapper, loads XS via XSLoader
 
 ## Key Files
 
@@ -47,9 +49,9 @@ live alongside templates in `t/resources/` and are versioned in git.
 
 ```perl
 JinjaTest::jinja_test_case(
-    template   => 'my-template.jinja',        # from t/resources/
-    expected   => 'my-template.jinja.test-01.out',  # versioned .out file
-    context    => { name => 'World' },         # hashref → template variables
+    template   => 'template.jinja',              # from t/resources/
+    expected   => 'template.jinja.test-01.out',  # versioned .out file
+    context    => {name => 'World'},             # hashref → template variables
 );
 ```
 
@@ -66,9 +68,13 @@ All registered callbacks (filters, functions, tests) go through the same
 `cb_filter_wrapper`. They receive arguments from Jinja as Perl scalars and
 return values back via `mj_value`. A few things to remember:
 
-- **Multiple args**: `$_[0]`, `$_[1]`, etc. — the first argument is always index 0.
-- **Return undef** → becomes `undefined` in Jinja. Return a string/number/blessed object for normal values.
-- **die/croak** → caught internally via `perl_call_sv(G_EVAL)`, error message extracted from `$@` and propagated as a minijinja rendering exception that aborts template processing. No special API needed.
+- **Multiple args**: `$_[0]`, `$_[1]`, etc. — the first argument is always
+  index 0.
+- **Return undef** → becomes `undefined` in Jinja. Return a
+  string/number/blessed object for normal values.
+- **die/croak** → caught internally via `perl_call_sv(G_EVAL)`, error message
+  extracted from `$@` and propagated as a minijinja rendering exception that
+  aborts template processing. No special API needed.
 
 ### Example: custom function that throws an error
 
@@ -80,7 +86,12 @@ add_function($env, 'raise_exception', sub { die $_[0] });
 
 ### Editor tip
 
-After formatting long C lines in `lib/Minijinja.xs`, clean up trailing whitespace:
+After editing a file, clean up trailing whitespace:
+
 ```bash
 sed -i 's/[[:space:]]*$//' lib/Minijinja.xs
 ```
+
+### regarding AGENTS.md
+
+Never auto update, only when requested.
