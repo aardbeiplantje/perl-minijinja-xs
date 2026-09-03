@@ -1,0 +1,15 @@
+{% for m in messages %}
+[{{ m.role }}] {{- loop.index0 + 1 }}. {% if m.content is string %}{{ m.content[:200] }}{% else %}{% for c in m.content %}{% if c.text is defined %}{{ c.text[:100] }}{% elif 'text' in c %}{{ c.text[:100] }}{% endif %}{% endfor %}{% endif %}
+{% endfor %}
+
+{# Tools #}
+{% if tools and tools|length > 0 %}
+Tools available: {{ tools|length }}
+{% for t in tools %}
+  - {{ t.name }}: {{ t.description[:150] }}
+{% endfor %}
+{% endif %}
+
+{# Summary #}
+Model: {{ model }}
+Messages total: {{ messages|length }}
