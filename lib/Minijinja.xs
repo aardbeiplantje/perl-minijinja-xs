@@ -15,6 +15,14 @@ typedef struct perl_mj_env {
     mj_env *env;
 } perl_mj_env_t;
 
+typedef struct cb_data {
+    perl_mj_env_t *pe;
+    SV *code_ref;
+} cb_data_t;
+
+
+
+
 static HV *cb_data_hv = NULL;
 
 static void cb_data_init(pTHX) {
@@ -134,6 +142,24 @@ static SV *mj_value_to_perl(pTHX_ mj_value val) {
     }
 }
 
+/* Filter/function/test callback wrapper: C ABI args -> Perl scalars -> call_sub -> mj_value */
+static bool cb_filter_wrapper(void *userdata,
+                              const mj_value *args, uintptr_t argc,
+                              mj_value *rv_out) {
+    cb_data_t *cbd = (cb_data_t *)userdata; dTHX;
+    IV n = 0; SV *svs[15]; for(uintptr_t i=0;i<argc&&i<15;i++){SV *a=mj_value_to_perl(aTHX_ args[i]);SvREFCNT_inc(a);svs[n++]=a;} I32 rc=0;dSP;ENTER;SAVETMPS;PUSHMARK(SP);for(IV j=0;j<n;j++)XPUSHs(svs[j]);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR);SPAGAIN; mj_value res;if(rc>0){SV *r=POPs;if(!SvOK(r)){res=mj_value_new_undefined();}else{res=perl_to_mj_value(aTHX_ r);}*rv_out=res;}else{res=mj_value_new_undefined();*rv_out=res;}FREETMPS;LEAVE;for(IV j=0;j<n;j++)SvREFCNT_dec(svs[j]);return true;}
+
+/* Loader callback: template name -> user_sub -> string or NULL */
+static const char *cb_loader_wrapper(void *userdata, const char *name) {
+    cb_data_t *cbd=(cb_data_t*)userdata;dTHX; SV *arg=newSVpv(name,0);I32 rc=0;const char *result=NULL;dSP;ENTER;SAVETMPS;PUSHMARK(SP);XPUSHs(arg);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN;if(rc>0){SV*r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){if(SvOK(r)){STRLEN l;const char*s=SvPV(r,l);result=strdup(s);}}else result=NULL;}else result=NULL;FREETMPS;LEAVE;SvREFCNT_dec(arg);return result;}
+
+/* Auto-escape callback: template name -> user_sub -> MJ_AUTO_ESCAPE_HTML or NONE */
+static enum mj_auto_escape cb_auto_escape_wrapper(void *userdata, const char *name) {
+    cb_data_t *cbd=(cb_data_t*)userdata;dTHX; SV *arg=newSVpv(name,0);I32 rc=0;int html=0;dSP;ENTER;SAVETMPS;PUSHMARK(SP);XPUSHs(arg);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN;if(rc>0){SV*r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r)))html=SvTRUE(r)?1:0;}FREETMPS;LEAVE;SvREFCNT_dec(arg);return html?MJ_AUTO_ESCAPE_HTML:MJ_AUTO_ESCAPE_NONE;}
+
+/* Path join callback: (name,parent) -> user_sub -> joined path string or NULL */
+static const char *cb_path_join_wrapper(void *userdata, const char *name, const char *parent) {
+    cb_data_t *cbd=(cb_data_t*)userdata;dTHX; SV *a1=newSVpv(name,0),*a2=newSVpv(parent,0);I32 rc=0;const char *result=NULL;dSP;ENTER;SAVETMPS;PUSHMARK(SP);XPUSHs(a1);XPUSHs(a2);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN;if(rc>0){SV*r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){if(SvOK(r)){STRLEN l;const char*s=SvPV(r,l);result=strdup(s);}}else result=NULL;}else result=NULL;FREETMPS;LEAVE;SvREFCNT_dec(a1);SvREFCNT_dec(a2);return result;}
 MODULE = Minijinja      PACKAGE = Minijinja     PREFIX = M_
 
 VERSIONCHECK: DISABLE
@@ -244,7 +270,6 @@ SV *M_render_template(SV *env_sv, char *name, SV *ctx_sv)
     PREINIT:
         perl_mj_env_t *pe;
         mj_value ctx;
-        int has_ctx = 0;
     CODE:
         dTHX;
 
@@ -252,10 +277,7 @@ SV *M_render_template(SV *env_sv, char *name, SV *ctx_sv)
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
 
-        has_ctx = (items >= 3);
-        if (!has_ctx || !SvOK(ctx_sv)) {
-            ctx = mj_value_new_object();
-        } else if (SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
+        if (items >= 3 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
             HV *hv = (HV*)SvRV(ctx_sv);
             HE *he;
             I32 key_len;
@@ -270,7 +292,7 @@ SV *M_render_template(SV *env_sv, char *name, SV *ctx_sv)
                 mj_value_set_string_key(&ctx, key, mv);
             }
         } else {
-            ctx = perl_to_mj_value(aTHX_ ctx_sv);
+            ctx = mj_value_new_object();
         }
 
         char *result = mj_env_render_template(pe->env, name, ctx);
@@ -288,7 +310,6 @@ SV *M_render_str(SV *env_sv, char *name, char *source, SV *ctx_sv)
     PREINIT:
         perl_mj_env_t *pe;
         mj_value ctx;
-        int has_ctx = 0;
     CODE:
         dTHX;
 
@@ -296,10 +317,7 @@ SV *M_render_str(SV *env_sv, char *name, char *source, SV *ctx_sv)
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
 
-        has_ctx = (items >= 4);
-        if (!has_ctx || !SvOK(ctx_sv)) {
-            ctx = mj_value_new_object();
-        } else if (SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
+        if (items >= 4 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
             HV *hv = (HV*)SvRV(ctx_sv);
             HE *he;
             I32 key_len;
@@ -314,7 +332,7 @@ SV *M_render_str(SV *env_sv, char *name, char *source, SV *ctx_sv)
                 mj_value_set_string_key(&ctx, key, mv);
             }
         } else {
-            ctx = perl_to_mj_value(aTHX_ ctx_sv);
+            ctx = mj_value_new_object();
         }
 
         char *result = mj_env_render_named_str(pe->env, name, source, ctx);
@@ -332,7 +350,6 @@ SV *M_eval_expr(SV *env_sv, char *expr, SV *ctx_sv)
     PREINIT:
         perl_mj_env_t *pe;
         mj_value ctx, result;
-        int has_ctx = 0;
     CODE:
         dTHX;
 
@@ -340,10 +357,7 @@ SV *M_eval_expr(SV *env_sv, char *expr, SV *ctx_sv)
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
 
-        has_ctx = (items >= 3);
-        if (!has_ctx || !SvOK(ctx_sv)) {
-            ctx = mj_value_new_object();
-        } else if (SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
+        if (items >= 3 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
             HV *hv = (HV*)SvRV(ctx_sv);
             HE *he;
             I32 key_len;
@@ -358,7 +372,7 @@ SV *M_eval_expr(SV *env_sv, char *expr, SV *ctx_sv)
                 mj_value_set_string_key(&ctx, key, mv);
             }
         } else {
-            ctx = perl_to_mj_value(aTHX_ ctx_sv);
+            ctx = mj_value_new_object();
         }
 
         result = mj_env_eval_expr(pe->env, expr, ctx);
@@ -507,86 +521,84 @@ void M_apply_syntax(SV *env_sv, SV *opts_sv)
 bool M_add_filter(SV *env_sv, char *name, SV *code_ref)
     PREINIT:
         perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
-        
-        /* TODO: callback registration - stores code_ref in cb_data_hv */
-        RETVAL = 0;  /* stub for now */
-    OUTPUT:
-        RETVAL
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
+            croak("add_filter requires a code reference");
+        }
+        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
+        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"filter");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        RETVAL = mj_env_add_filter(pe->env, name, cb_filter_wrapper, cbd, NULL);
+    OUTPUT: RETVAL
 
 bool M_add_function(SV *env_sv, char *name, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe;
+        perl_mj_env_t *pe; cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv);
-        if (pe->env == NULL) XSRETURN_UNDEF;
-        
-        /* TODO: callback registration */
-        RETVAL = 0;  /* stub for now */
-    OUTPUT:
-        RETVAL
+        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("add_function requires a code reference"); }
+        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
+        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"function");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        RETVAL = mj_env_add_function(pe->env, name, cb_filter_wrapper, cbd, NULL);
+    OUTPUT: RETVAL
 
 bool M_add_test(SV *env_sv, char *name, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe;
+        perl_mj_env_t *pe; cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv);
-        if (pe->env == NULL) XSRETURN_UNDEF;
-        
-        /* TODO: callback registration */
-        RETVAL = 0;  /* stub for now */
-    OUTPUT:
-        RETVAL
+        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("add_test requires a code reference"); }
+        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
+        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"test");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        RETVAL = mj_env_add_test(pe->env, name, cb_filter_wrapper, cbd, NULL);
+    OUTPUT: RETVAL
 
 bool M_set_loader(SV *env_sv, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe;
+        perl_mj_env_t *pe; cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv);
-        if (pe->env == NULL) XSRETURN_UNDEF;
-        
-        /* TODO: callback registration */
-        RETVAL = 0;  /* stub for now */
-    OUTPUT:
-        RETVAL
+        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("set_loader requires a code reference"); }
+        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
+        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"loader");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        RETVAL = mj_env_set_loader(pe->env, cb_loader_wrapper, cbd, NULL);
+    OUTPUT: RETVAL
 
 bool M_set_auto_escape(SV *env_sv, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe;
+        perl_mj_env_t *pe; cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv);
-        if (pe->env == NULL) XSRETURN_UNDEF;
-        
-        /* TODO: callback registration */
-        RETVAL = 0;  /* stub for now */
-    OUTPUT:
-        RETVAL
+        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("set_auto_escape requires a code reference"); }
+        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
+        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"autoescape");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        RETVAL = mj_env_set_auto_escape_callback(pe->env, cb_auto_escape_wrapper, cbd, NULL);
+    OUTPUT: RETVAL
 
 bool M_set_path_join(SV *env_sv, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe;
+        perl_mj_env_t *pe; cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv);
-        if (pe->env == NULL) XSRETURN_UNDEF;
-        
-        /* TODO: callback registration */
-        RETVAL = 0;  /* stub for now */
-    OUTPUT:
-        RETVAL
+        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("set_path_join requires a code reference"); }
+        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
+        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"pathjoin");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        RETVAL = mj_env_set_path_join_callback(pe->env, cb_path_join_wrapper, cbd, NULL);
+    OUTPUT: RETVAL
 
 SV *M_error_exists()
     CODE:

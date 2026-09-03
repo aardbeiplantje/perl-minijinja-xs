@@ -1,31 +1,30 @@
 use strict;
 use warnings;
-use Test::More tests => 4;
+use Test::More tests => 7;
 
-SKIP: {
-    skip "Minijinja XS module not available", 4 unless eval { require Minijinja };
+use Minijinja qw(
+    new add_template remove_template clear_templates
+    render_template render_str eval_expr
+    error_exists error_detail error_debug_info
+    error_kind error_line error_template_name error_print
+);
 
-    my $mj_env = Minijinja->new() or do {
-        skip "Cannot create environment", 4;
-    };
+# Smoke test: environment creation and destruction (no explicit free needed)
+my $env = new();
+ok($env, 'environment created');
 
-    # Test 1: Simple variable substitution  
-    my $tmpl = $mj_env->add_template('hello', 'Hello {{ name }}!');
-    ok($tmpl, 'Template registration succeeded') or diag("Error: ", Minijinja::error_exists());
+# Smoke test: template registration + rendering with hashref context  
+add_template($env, 'hello', 'Hello {{ name }}!');
+is(render_template($env, 'hello', { name => 'World' }), "Hello World!", 'basic render');
 
-    if ($tmpl) {
-        my $result = $mj_env->render('hello', { name => 'World' });
-        like($result, qr/^Hello World$/, 'Rendered simple template');
-    } else {
-        pass('Skipped render test due to template failure');
-    }
+# Smoke test: inline template rendering  
+is(render_str($env, 'inline.pl', '{{ greeting }}!', { greeting => 'Hi there' }), "Hi there!", 'inline render');
 
-    # Test 2: One-shot rendering via class method  
-    my $inline_result = Minijinja->apply_from_string('{{ greeting }}!', 
-                                                       { greeting => 'Hi there' });
-    like($inline_result, qr/Hi there/, 'Inline template rendered');
+# Smoke test: expression evaluation without context
+is(eval_expr($env, '1 + 2 * 3', {}), 7, 'eval_expr arithmetic');
+is(eval_expr($env, "'Hello, ' ~ name ~ '!'", { name => 'World' }), 'Hello, World!', 'eval_expr string concat');
 
-}
-
-done_testing();
-
+# Smoke test: boolean expressions in templates
+add_template($env, 'bool_test', "{% if n is even %}even{% else %}odd{% endif %}");
+is(render_template($env, 'bool_test', { n => 4 }), "even", 'boolean condition true');
+is(render_template($env, 'bool_test', { n => 3 }), "odd", 'boolean condition false');
