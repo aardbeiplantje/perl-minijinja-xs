@@ -2,11 +2,13 @@
 
 ## Project State
 
-**WORKING.** Module compiles and all tests pass. Template rendering, callbacks, error handling fully implemented.
+Module compiles and all tests pass. Template rendering, callbacks, error handling fully implemented.
 
 ## Architecture
 
-Perl XS bindings wrapping [minijinja-cabi](https://github.com/mitsuhiko/minijinja) (Rust template engine). Two interfaces work together:
+Perl XS bindings wrapping
+[minijinja-cabi](https://github.com/mitsuhiko/minijinja) (Rust template
+engine). Two interfaces work together:
 
 - **XS layer** (`Minijinja.xs`) — XSUB definitions providing low-level access to minijinja CABI
 - **Perl wrapper** (`Minijinja.pm`) — Exporter setup + convenience `new(%opts)` wrapper, loads XS via XSLoader
@@ -35,9 +37,13 @@ perl Makefile.PL && make && make test
 
 ## Jinja Template Testing Framework
 
-Flexible test harness in `t/lib/JinjaTest.pm` for validating templates against pre-saved expected outputs:
+Flexible test harness in `t/lib/JinjaTest.pm` for validating templates against
+pre-saved expected outputs.
 
-**How it works**: Each `.jinja` template can have multiple test cases (one per `.t` file). Tests render the template with context, then compare output using `is($got, $expected)` — diff-style failures show exactly what changed. Expected outputs live alongside templates in `t/resources/` and are versioned in git.
+Each `.jinja` template can have multiple test cases (one per `.t` file). Tests
+render the template with context, then compare output using `is($got,
+$expected)` — diff-style failures show exactly what changed. Expected outputs
+live alongside templates in `t/resources/` and are versioned in git.
 
 ```perl
 JinjaTest::jinja_test_case(
