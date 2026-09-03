@@ -28,7 +28,7 @@ engine). Two interfaces work together:
 ```bash
 rustup default stable
 bash scripts/setup-minijinja.sh
-export MINIJINJA_SRC=$(pwd)/minijinja  
+export MINIJINJA_SRC=$(pwd)/minijinja
 export LD_LIBRARY_PATH=$(pwd)/minijinja/target/release
 perl Makefile.PL && make && make test
 ```
@@ -48,7 +48,7 @@ live alongside templates in `t/resources/` and are versioned in git.
 ```perl
 JinjaTest::jinja_test_case(
     template   => 'my-template.jinja',        # from t/resources/
-    expected   => 'my-template.jinja.test-01.out',  # versioned .out file  
+    expected   => 'my-template.jinja.test-01.out',  # versioned .out file
     context    => { name => 'World' },         # hashref → template variables
 );
 ```
@@ -60,7 +60,27 @@ MINIJINJA_UPDATE_EXPECTATIONS=1 perl t/50-jinja-test-*.t
 
 Scaffold new tests with `scripts/gen-jinja-tests.pl --scan` or `--generate`.
 
-**Editor tip:** After formatting long C lines in `lib/Minijinja.xs`, clean up trailing whitespace:
+## Callbacks
+
+All registered callbacks (filters, functions, tests) go through the same
+`cb_filter_wrapper`. They receive arguments from Jinja as Perl scalars and
+return values back via `mj_value`. A few things to remember:
+
+- **Multiple args**: `$_[0]`, `$_[1]`, etc. — the first argument is always index 0.
+- **Return undef** → becomes `undefined` in Jinja. Return a string/number/blessed object for normal values.
+- **die/croak** → caught internally via `perl_call_sv(G_EVAL)`, error message extracted from `$@` and propagated as a minijinja rendering exception that aborts template processing. No special API needed.
+
+### Example: custom function that throws an error
+
+```perl
+add_function($env, 'raise_exception', sub { die $_[0] });
+# In Jinja: {{ raise_exception('something went wrong') }}
+# → rendering aborts, error_detail() returns "something went wrong"
+```
+
+### Editor tip
+
+After formatting long C lines in `lib/Minijinja.xs`, clean up trailing whitespace:
 ```bash
 sed -i 's/[[:space:]]*$//' lib/Minijinja.xs
 ```

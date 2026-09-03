@@ -18,7 +18,6 @@ typedef struct perl_mj_env {
 typedef struct cb_data {
     perl_mj_env_t *pe;
     SV *code_ref;
-    int is_exception_fn;  /* non-zero if this is a raise_exception-style function */
 } cb_data_t;
 
 /* Thread-local storage for exception handling */
@@ -167,23 +166,7 @@ static bool cb_filter_wrapper(void *userdata,
                               const mj_value *args, uintptr_t argc,
                               mj_value *rv_out) {
     cb_data_t *cbd = (cb_data_t *)userdata; dTHX;
-    /* Check if this is an exception-throwing function - abort immediately */
-    if (cbd->is_exception_fn) {
-        STRLEN msg_len = 0;
-        if (argc > 0) {
-            SV *msg_sv = mj_value_to_perl(aTHX_ args[0]);
-            if (msg_sv && SvPOK(msg_sv)) {
-                mj_pending_exception = SvPV(msg_sv, msg_len);
-            } else {
-                mj_pending_exception = "raise_exception() called";
-            }
-        } else {
-            mj_pending_exception = "raise_exception() called without message";
-        }
-        mj_exception_set = 1;
-        *rv_out = mj_value_new_undefined();
-        return false;
-    }
+
     IV n = 0;
     SV *svs[15];
     for(uintptr_t i=0;i<argc&&i<15;i++){
@@ -199,12 +182,16 @@ static bool cb_filter_wrapper(void *userdata,
     for(IV j=0;j<n;j++)
         XPUSHs(svs[j]);
     PUTBACK;
+
+    /* Call the sub with G_EVAL so die/croak are caught in $@ */
     rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);
     SPAGAIN;
-    mj_value res;
-    if(rc>0){
+
+    if(rc > 0){
+        /* perl_call_sv succeeded — process return value normally */
         SV *r=POPs;
         if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
+            mj_value res;
             if(SvOK(r)){
                 res=perl_to_mj_value(aTHX_ r);
             } else {
@@ -212,45 +199,39 @@ static bool cb_filter_wrapper(void *userdata,
             }
             *rv_out=res;
         } else {
-            res=mj_value_new_undefined();
-            *rv_out=res;
+            *rv_out=mj_value_new_undefined();
         }
+        FREETMPS;
+        LEAVE;
+        for(IV j=0;j<n;j++)
+            SvREFCNT_dec(svs[j]);
+        return true;
     } else {
-        res=mj_value_new_undefined();
-        *rv_out=res;
+        /* perl_call_sv failed (rc == -1 means eval error from die/croak).
+         * Extract the error message from $@ and propagate as minijinja exception. */
+        GV *err_gv = gv_fetchpv("@@", 0, SVt_PVMG);
+        STRLEN msg_len = 0;
+        const char *msg = NULL;
+
+        if (err_gv && GvSV(err_gv) && SvOK(GvSV(err_gv)) && SvPOK(GvSV(err_gv))) {
+            msg = SvPV(GvSV(err_gv), msg_len);
+        } else {
+            msg = "exception raised";
+        }
+
+        mj_pending_exception = msg;
+        mj_exception_set = 1;
+
+        /* Return false to signal failure to minijinja — it will abort rendering */
+        *rv_out = mj_value_new_undefined();
+        FREETMPS;
+        LEAVE;
+        for(IV j=0;j<n;j++)
+            SvREFCNT_dec(svs[j]);
+        return false;  /* tells minijinja to abort */
     }
-    FREETMPS;
-    LEAVE;
-    for(IV j=0;j<n;j++)
-        SvREFCNT_dec(svs[j]);
-    return true;
 }
 
-/* Exception-raising callback wrapper: sets TLS and returns false to abort */
-static bool cb_exception_wrapper(void *userdata,
-                                 const mj_value *args, uintptr_t argc,
-                                 mj_value *rv_out) {
-    cb_data_t *cbd = (cb_data_t *)userdata; dTHX;
-    /* Collect arguments as strings for the exception message */
-    STRLEN msg_len = 0;
-    if (argc > 0) {
-        SV *msg_sv = mj_value_to_perl(aTHX_ args[0]);
-        if (msg_sv && SvPOK(msg_sv)) {
-            mj_pending_exception = SvPV(msg_sv, msg_len);
-            mj_exception_set = 1;
-        } else if (msg_sv) {
-            mj_pending_exception = "raise_exception() called";
-            mj_exception_set = 1;
-        }
-    } else {
-        mj_pending_exception = "raise_exception() called without message";
-        mj_exception_set = 1;
-    }
-    /* Return false to signal failure to minijinja */
-    mj_value res = mj_value_new_undefined();
-    *rv_out = res;
-    return false;
-}
 
 /* Loader callback: template name -> user_sub -> string or NULL */
 static const char *cb_loader_wrapper(void *userdata, const char *name) {
@@ -786,29 +767,6 @@ bool M_add_test(SV *env_sv, char *name, SV *code_ref)
         }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
         hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_add_test(pe->env, name, cb_filter_wrapper, cbd, NULL);
-    OUTPUT: RETVAL
-
-bool M_add_exception_function(SV *env_sv, char *name)
-    PREINIT:
-        perl_mj_env_t *pe;
-        cb_data_t *cbd;
-    CODE:
-        dTHX;
-        if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv);
-        if (pe->env == NULL) XSRETURN_UNDEF;
-        Newxz(cbd, 1, cb_data_t);
-        cbd->pe = pe;
-        cbd->code_ref = &PL_sv_undef;
-        cbd->is_exception_fn = 1;
-        char kbuf[256];
-        int idx = 0;
-        STRLEN kl;
-        do{
-            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"exception");
-        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
-        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
-        RETVAL = mj_env_add_function(pe->env, name, cb_exception_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_set_loader(SV *env_sv, SV *code_ref)
