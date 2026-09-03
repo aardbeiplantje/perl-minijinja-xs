@@ -1,19 +1,6 @@
-# Minijinja Perl Module
+# Minijinja Perl XS
 
-Perl XS bindings to [minijinja](https://github.com/mitsuhiko/minijinja), 
-a fast Rust implementation of the Jinja2 template engine.
-
-## ⚠️ WARNING: PROJECT IS CURRENTLY BROKEN
-
-This module does **not** compile or run in its current state. There are multiple critical issues preventing basic functionality:
-
-1. Missing `typemap` file (referenced in Makefile.PL but doesn't exist)
-2. No XS export mechanism - XSUBs defined but not exported to Perl
-3. Function naming mismatch - `Minijinja.pm` calls functions with `mj_*` prefix but XS defines them with `_env_*`/`_value_*` prefixes  
-4. Non-existent function `mj_render_simple()` called by the OO wrapper but never implemented
-5. Missing external library at build time (`../minijinja/target/release/libminijinja_cabi.so`)
-
-See `AGENTS.md` for detailed issue descriptions and fix requirements.
+Perl XS bindings to [minijinja](https://github.com/mitsuhiko/minijinja), a fast Rust implementation of the Jinja2 template engine.
 
 ## Building
 
@@ -24,13 +11,12 @@ See `AGENTS.md` for detailed issue descriptions and fix requirements.
 
 ### Step 1: Build minijinja-cabi library
 
-The `minijinja-cabi` crate is part of the [mitsuhiko/minijinja](https://github.com/mitsuhiko/minijinja) monorepo. It is **not published on crates.io** as a standalone package — you must clone the repo and build it from source.
+The `minijinja-cabi` crate is part of the [mitsuhiko/minijinja](https://github.com/mitsuhiko/minijinja) monorepo. Clone the repo and build it from source.
 
 ```bash
-cd ..
 git clone https://github.com/mitsuhiko/minijinja.git
 cd minijinja/minijinja-cabi
-cargo build --release -p minijinja-cabi
+cargo build --release -p minijinja_cabi
 ```
 
 This produces:
@@ -40,7 +26,8 @@ This produces:
 ### Step 2: Build the Perl module
 
 ```bash
-cd ../../../perl-minijinja-xs.git
+cd ../..
+cd perl-minijinja-xs.git
 perl Makefile.PL
 make
 make test
@@ -54,9 +41,9 @@ export MINIJINJA_BUILD=/path/to/minijinja/target/release
 export MINIJINJA_SRC=/path/to/minijinja
 ```
 
-## Intended API (Not Yet Functional)
+## API Overview
 
-Once the above issues are fixed, the module will provide both low-level functional and high-level OO interfaces:
+Minijinja provides both a low-level functional API (XS XSUBs) and high-level OO interface (Perl wrapper).
 
 ### OO Interface (via Minijinja.pm)
 
@@ -69,36 +56,72 @@ print $env->render('hello', {name => 'World'});  # "Hello World!"
 print $env->apply_from_string('Inline {{ template }}', {template => 'works'});
 ```
 
-### Low-Level Functional API (from minijinja.xs)
+### Low-Level Functional API
+
+The XS layer exposes prefixed XSUBs (`M_*`) for advanced usage:
 
 ```perl
-use Minijinja;
+use Minijinja qw(
+    new add_template render_template render_str eval_expr
+    add_filter add_function add_test add_exception_function
+    set_debug set_fuel set_recursion_limit
+    apply_syntax error_exists error_detail error_print
+);
 
-# Environment creation
-my $env = _env_new();
-_env_add_template($env, 'hello', 'Hello {{ name }}!');
-my $ctx = _value_new_object();
-_value_set_string_key($ctx, 'name', _value_new_string('World'));
-my $result = _env_render_template($env, 'hello', $ctx);
-_value_free($ctx);
-_env_free($env);
+# Environment creation and template rendering
+my $env = new();
+add_template($env, 'hello', 'Hello {{ name }}!');
+my $result = render_template($env, 'hello', { name => 'World' });
 
-# Value manipulation  
-my $str = _value_new_string('test');
-my $kind = _value_get_kind($str);
-_value_free($str);
+# Inline templates from string
+my $result = render_str($env, 'my-template.j2', 'Greet {{ user }}!', { user => 'Alice' });
+
+# Custom filters and functions
+add_filter($env, 'upper_reverse', sub { join '', reverse split //, $_[-1] });
+add_function($env, 'repeat_str', sub { $_[-1] x $_[0] });
+add_exception_function($env, 'raise_exception');  # throws errors from templates
+```
+
+### Exception Handling from Templates
+
+Register `raise_exception` to abort template rendering with custom messages:
+
+```perl
+add_exception_function($env, 'raise_exception');
+# In template: {{ raise_exception('Validation failed') }}
+# Error detail will contain 'Validation failed'
+```
+
+## Tests
+
+A flexible Jinja testing framework is available in `t/lib/JinjaTest.pm`:
+
+```perl
+use lib 't/lib';
+use JinjaTest;
+
+JinjaTest::jinja_test_case(
+    template   => 'my-template.jinja',
+    expected   => 'my-template.jinja.test-01.out',
+    context    => { name => 'World' },
+);
+```
+
+Update expected outputs when needed:
+
+```bash
+MINIJINJA_UPDATE_EXPECTATIONS=1 perl t/50-jinja-test-*.t
 ```
 
 ## Files
 
-- `Makefile.PL` - Build configuration  
-- `Minijinja.pm` - Main Perl module with OO interface  
-- `minijinja.xs` - XSUB definitions wrapping minijinja-cabi C API  
-- `perl_callbacks.c` - Callback bridge for Perl functions as filters/functions/tests
-- `Makefile.PL` line 21 - references `typemap` file that doesn't exist (blocker)
-- `t/*.t` - Test suite (all currently broken)  
+- `Makefile.PL` - Build configuration
+- `lib/Minijinja.pm` - Main Perl module with OO interface and export list
+- `lib/Minijinja.xs` - XSUB definitions wrapping minijinja-cabi C API
+- `t/*.t` - Test suite
+- `t/lib/JinjaTest.pm` - Flexible Jinja template testing framework
 - `AGENTS.md` - Detailed technical documentation and issue tracking
 
 ## License
 
-Apache 2.0 (same as upstream minijinja project). See LICENSE file.
+MIT License (same as upstream minijinja project). See LICENSE file.
