@@ -2,6 +2,12 @@
 
 Perl XS bindings to [minijinja](https://github.com/mitsuhiko/minijinja), a fast Rust implementation of the Jinja2 template engine.
 
+## Third-Party Dependency
+
+This project depends on the **minijinja-cabi** crate, built from the upstream [mitsuhiko/minijinja](https://github.com/mitsuhiko/minijinja) repository. The `./minijinja/` directory contains a vendored copy of the minijinja source and its C ABI layer — it is a third-party dependency and not part of this CPAN module's git history (see `.gitignore`).
+
+To build this module, you must have the minijinja-cabi library compiled and available at `./minijinja/target/release/libminijinja_cabi.so`.
+
 ## Building
 
 ### Prerequisites
@@ -124,4 +130,6 @@ MINIJINJA_UPDATE_EXPECTATIONS=1 perl t/50-jinja-test-*.t
 
 ## License
 
-MIT License (same as upstream minijinja project). See LICENSE file.
+This project is released under the MIT License — see [LICENSE](LICENSE) for details.
+
+The upstream minijinja Rust project (vendored in `./minijinja/`) is also licensed under MIT. See the vendored copy for its full license terms.
