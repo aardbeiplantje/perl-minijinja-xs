@@ -857,7 +857,7 @@ SV *M_error_exists()
 char *M_error_detail()
     CODE:
         dTHX;
-        /* Check for pending exception from raise_exception */
+        /* Check for pending exception from user callback die/croak */
         if (mj_has_pending_exception(aTHX) && mj_get_pending_exception(aTHX)) {
             ST(0) = sv_2mortal(newSVpv(mj_get_pending_exception(aTHX), 0));
             mj_clear_exception(aTHX);
