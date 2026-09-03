@@ -59,3 +59,8 @@ MINIJINJA_UPDATE_EXPECTATIONS=1 perl t/50-jinja-test-*.t
 ```
 
 Scaffold new tests with `scripts/gen-jinja-tests.pl --scan` or `--generate`.
+
+**Editor tip:** After formatting long C lines in `lib/Minijinja.xs`, clean up trailing whitespace:
+```bash
+sed -i 's/[[:space:]]*$//' lib/Minijinja.xs
+```
