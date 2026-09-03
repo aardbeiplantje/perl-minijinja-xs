@@ -34,15 +34,14 @@ sub get_resources_dir {
 }
 
 sub jinja_render {
-    my ($template_source, $context) = @_;
+    my ($template_source, $context, $opts) = @_;
 
     my $env = new();
     unless ($env) {
         die "Failed to create Minijinja environment";
     }
 
-    # Register Python-style string helper functions (as global filters)
-    # These are needed for some complex templates that use Python-style method calls
+    # Register default helpers (always applied; can be overridden by per-test callbacks)
     add_filter($env, 'has_prefix', sub {
         my ($str, $prefix) = @_;
         return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
@@ -94,6 +93,11 @@ sub jinja_render {
     # Register raise_exception as a regular function that dies to abort rendering
     add_function($env, 'raise_exception', sub { die $_[0] });
 
+    # Apply per-test callbacks on top of defaults (custom names shadow defaults)
+    if ($opts && ref($opts) eq 'HASH') {
+        _apply_callbacks_to_env($env, $opts->{callbacks} // {});
+    }
+
     # Patch template source to convert .method() calls to function calls
     my $patched_source = $template_source;
     $patched_source =~ s/\.startswith\s*\((.*)\)/startswith($1)/sg;
@@ -123,6 +127,13 @@ sub jinja_test_case {
     my $template_name   = delete $args{template}  or die "Missing 'template' argument";
     my $expected_file   = delete $args{expected}  or die "Missing 'expected' argument";
     my %context         = %{$args{context} // {}};
+    my $opts            = delete $args{opts}       // {};
+
+    # Extract callbacks from opts for rendering
+    my $render_opts;
+    if (ref($opts) eq 'HASH') {
+        $render_opts->{callbacks} = delete $opts->{callbacks};
+    }
 
     my $full_expected_path = "$resources_dir/$expected_file";
 
@@ -143,7 +154,7 @@ sub jinja_test_case {
     # Render the template (always needed)
     my $actual_output;
     eval {
-        $actual_output = jinja_render($template_source, \%context);
+        $actual_output = jinja_render($template_source, \%context, $render_opts);
     };
 
     if ($@) {
@@ -176,12 +187,22 @@ sub jinja_test_case {
 # Loads the context hashref from t/resources/$input_file (JSON format),
 # renders the template from t/resources/$template_name, and compares
 # against the expected output in t/resources/$expected_file.
+#
+# Optional 'opts' argument accepts callback registrations:
+#   callbacks => { functions => {...}, filters => {...}, tests => {...} }
 sub jinja_test_case_with_input {
     my (%args) = @_;
 
     my $template_name   = delete $args{template}  or die "Missing 'template' argument";
     my $input_file      = delete $args{input}       or die "Missing 'input' argument";
     my $expected_file   = delete $args{expected}    or die "Missing 'expected' argument";
+    my $opts            = delete $args{opts}         // {};
+
+    # Extract callbacks for rendering when using opts hashref
+    my $render_opts;
+    if (ref($opts) eq 'HASH') {
+        $render_opts->{callbacks} = delete $opts->{callbacks};
+    }
 
     my $full_input_path     = "$resources_dir/$input_file";
     my $full_expected_path  = "$resources_dir/$expected_file";
@@ -231,7 +252,7 @@ sub jinja_test_case_with_input {
     # Render the template using loaded context (always needed)
     my $actual_output;
     eval {
-        $actual_output = jinja_render($template_source, $context);
+        $actual_output = jinja_render($template_source, $context, $render_opts);
     };
 
     if ($@) {
@@ -257,6 +278,28 @@ sub jinja_test_case_with_input {
         Test::More->diag("Expected output file not found: $expected_file");
         Test::More->diag("Run with MINIJINJA_UPDATE_EXPECTATIONS=1 to generate it.");
     }
+}
+
+# Apply a callbacks hashref to an environment.
+# Keys: functions, filters, tests — each maps callback names to code refs.
+sub _apply_callbacks_to_env {
+    my ($env, $cbs) = @_;
+
+    if (ref($cbs) ne 'HASH') { return; }
+
+    for my $kind (qw(functions filters tests)) {
+        next unless exists $cbs->{$kind};
+        my $registry = delete $cbs->{$kind};
+        next unless ref($registry) eq 'HASH';
+        while (my ($name, $code_ref) = each %{$registry}) {
+            next unless ref($code_ref) eq 'CODE';
+            if ($kind eq 'functions') { add_function($env, $name, $code_ref); }
+            elsif ($kind eq 'filters')   { add_filter($env, $name, $code_ref); }
+            elsif ($kind eq 'tests')     { add_test($env, $name, $code_ref); }
+        }
+    }
+
+    # Remaining unknown keys in callbacks hashref are silently ignored.
 }
 
 1;
