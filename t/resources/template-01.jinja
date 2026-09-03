@@ -69,7 +69,7 @@
     {%- set index = (messages|length - 1) - loop.index0 %}
     {%- if ns.multi_step_tool and message.role == "user" %}
         {%- set content = render_content(message.content, false)|trim %}
-        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}
+        {%- if not(startswith(content, '<tool_response>') and endswith(content, '</tool_response>')) %}
             {%- set ns.multi_step_tool = false %}
             {%- set ns.last_query_index = index %}
         {%- endif %}

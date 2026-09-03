@@ -6,7 +6,7 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
-use Minijinja qw(new render_str error_exists error_detail add_filter add_test);
+use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test add_exception_function);
 use File::Basename;
 
 # Resources live in t/resources/, one level up from this module (t/lib/)  
@@ -52,8 +52,20 @@ sub jinja_render {
                ? substr($str, -length($suffix)) eq $suffix : 0;
     });
 
+    # Register startswith/endswith as global functions (not methods) for compatibility
+    # Templates using .startswith() need to be patched to use the function form
+    add_function($env, 'startswith', sub {
+        my ($str, $prefix) = @_;
+        return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
+    });
+    add_function($env, 'endswith', sub {
+        my ($str, $suffix) = @_;  
+        return defined($str) && defined($suffix) && length($str) >= length($suffix) 
+               ? substr($str, -length($suffix)) eq $suffix : 0;
+    });
+
     # Also register as Jinja tests so they can be used with 'is' syntax  
-    add_test($env, 'startswith', sub {
+    add_test($env, 'istartswith', sub {
         my ($str, $prefix) = @_;
         return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
     });
@@ -62,6 +74,14 @@ sub jinja_render {
         return defined($str) && defined($suffix) && length($str) >= length($suffix) 
                ? substr($str, -length($suffix)) eq $suffix : 0;
     });
+
+    # Register raise_exception as an exception-throwing function that aborts rendering
+    add_exception_function($env, 'raise_exception');
+
+    # Patch template source to convert .method() calls to function calls
+    my $patched_source = $template_source;
+    $patched_source =~ s/\.startswith\s*\((.*)\)/startswith($1)/sg;
+    $patched_source =~ s/\.endswith\s*\((.*)\)/endswith($1)/sg;
 
     # Use a unique name for the template  
     my $result = render_str($env, '_inline.j2', $template_source, $context || {});

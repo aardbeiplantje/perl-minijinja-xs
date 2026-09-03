@@ -15,7 +15,7 @@ our @EXPORT_OK = qw(
     
     add_global
     
-    add_filter add_function add_test
+    add_filter add_function add_test add_exception_function
     
     set_debug set_fuel clear_fuel set_recursion_limit
     set_trim_blocks get_trim_blocks
