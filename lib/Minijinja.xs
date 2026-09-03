@@ -58,7 +58,7 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
     if (!sv || !SvOK(sv)) {
         return mj_value_new_undefined();
     }
-    
+
     if (SvROK(sv)) {
         SV *rv = SvRV(sv);
         if (SvTYPE(rv) == SVt_PVAV) {
@@ -89,27 +89,27 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
             return obj;
         }
     }
-    
+
     if (SvIOK(sv) && !SvNOK(sv) && !SvPOK(sv)) {
         return mj_value_new_i64(SvIV(sv));
     }
-    
+
     if (SvNOK(sv)) {
         return mj_value_new_f64(SvNV(sv));
     }
-    
+
     if (SvPOK(sv)) {
         STRLEN len;
         const char *str = SvPV(sv, len);
         return mj_value_new_string(str);
     }
-    
+
     return mj_value_new_undefined();
 }
 
 static SV *mj_value_to_perl(pTHX_ mj_value val) {
     mj_value_kind kind = mj_value_get_kind(val);
-    
+
     switch (kind) {
         case MJ_VALUE_KIND_STRING: {
             char *str = mj_value_to_str(val);
@@ -184,7 +184,47 @@ static bool cb_filter_wrapper(void *userdata,
         *rv_out = mj_value_new_undefined();
         return false;
     }
-    IV n = 0; SV *svs[15]; for(uintptr_t i=0;i<argc&&i<15;i++){SV *a=mj_value_to_perl(aTHX_ args[i]);SvREFCNT_inc(a);svs[n++]=a;} I32 rc=0;dSP;ENTER;SAVETMPS;PUSHMARK(SP);for(IV j=0;j<n;j++)XPUSHs(svs[j]);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN; mj_value res;if(rc>0){SV *r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){if(SvOK(r)){res=perl_to_mj_value(aTHX_ r);}else{res=mj_value_new_undefined();}*rv_out=res;}else{res=mj_value_new_undefined();*rv_out=res;}}else{res=mj_value_new_undefined();*rv_out=res;}FREETMPS;LEAVE;for(IV j=0;j<n;j++)SvREFCNT_dec(svs[j]);return true;}
+    IV n = 0;
+    SV *svs[15];
+    for(uintptr_t i=0;i<argc&&i<15;i++){
+        SV *a=mj_value_to_perl(aTHX_ args[i]);
+        SvREFCNT_inc(a);
+        svs[n++]=a;
+    }
+    I32 rc=0;
+    dSP;
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
+    for(IV j=0;j<n;j++)
+        XPUSHs(svs[j]);
+    PUTBACK;
+    rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);
+    SPAGAIN;
+    mj_value res;
+    if(rc>0){
+        SV *r=POPs;
+        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
+            if(SvOK(r)){
+                res=perl_to_mj_value(aTHX_ r);
+            } else {
+                res=mj_value_new_undefined();
+            }
+            *rv_out=res;
+        } else {
+            res=mj_value_new_undefined();
+            *rv_out=res;
+        }
+    } else {
+        res=mj_value_new_undefined();
+        *rv_out=res;
+    }
+    FREETMPS;
+    LEAVE;
+    for(IV j=0;j<n;j++)
+        SvREFCNT_dec(svs[j]);
+    return true;
+}
 
 /* Exception-raising callback wrapper: sets TLS and returns false to abort */
 static bool cb_exception_wrapper(void *userdata,
@@ -214,15 +254,104 @@ static bool cb_exception_wrapper(void *userdata,
 
 /* Loader callback: template name -> user_sub -> string or NULL */
 static const char *cb_loader_wrapper(void *userdata, const char *name) {
-    cb_data_t *cbd=(cb_data_t*)userdata;dTHX; SV *arg=newSVpv(name,0);I32 rc=0;const char *result=NULL;dSP;ENTER;SAVETMPS;PUSHMARK(SP);XPUSHs(arg);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN;if(rc>0){SV*r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){if(SvOK(r)){STRLEN l;const char*s=SvPV(r,l);result=strdup(s);}}else result=NULL;}else result=NULL;FREETMPS;LEAVE;SvREFCNT_dec(arg);return result;}
+    cb_data_t *cbd = (cb_data_t*)userdata; dTHX;
+    SV *arg = newSVpv(name, 0);
+    I32 rc = 0;
+    const char *result = NULL;
+    dSP;
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
+    XPUSHs(arg);
+    PUTBACK;
+    rc = perl_call_sv(cbd->code_ref, G_SCALAR|G_EVAL);
+    SPAGAIN;
+    if(rc > 0){
+        SV *r = POPs;
+        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
+            if(SvOK(r)){
+                STRLEN l;
+                const char *s = SvPV(r, l);
+                result = strdup(s);
+            } else {
+                result = NULL;
+            }
+        } else {
+            result = NULL;
+        }
+    } else {
+        result = NULL;
+    }
+    FREETMPS;
+    LEAVE;
+    SvREFCNT_dec(arg);
+    return result;
+}
 
 /* Auto-escape callback: template name -> user_sub -> MJ_AUTO_ESCAPE_HTML or NONE */
 static enum mj_auto_escape cb_auto_escape_wrapper(void *userdata, const char *name) {
-    cb_data_t *cbd=(cb_data_t*)userdata;dTHX; SV *arg=newSVpv(name,0);I32 rc=0;int html=0;dSP;ENTER;SAVETMPS;PUSHMARK(SP);XPUSHs(arg);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN;if(rc>0){SV*r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r)))html=SvTRUE(r)?1:0;}FREETMPS;LEAVE;SvREFCNT_dec(arg);return html?MJ_AUTO_ESCAPE_HTML:MJ_AUTO_ESCAPE_NONE;}
+    cb_data_t *cbd = (cb_data_t*)userdata; dTHX;
+    SV *arg = newSVpv(name, 0);
+    I32 rc = 0;
+    int html = 0;
+    dSP;
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
+    XPUSHs(arg);
+    PUTBACK;
+    rc = perl_call_sv(cbd->code_ref, G_SCALAR|G_EVAL);
+    SPAGAIN;
+    if(rc > 0){
+        SV *r = POPs;
+        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
+            html = SvTRUE(r) ? 1 : 0;
+        }
+    }
+    FREETMPS;
+    LEAVE;
+    SvREFCNT_dec(arg);
+    return html ? MJ_AUTO_ESCAPE_HTML : MJ_AUTO_ESCAPE_NONE;
+}
 
 /* Path join callback: (name,parent) -> user_sub -> joined path string or NULL */
 static const char *cb_path_join_wrapper(void *userdata, const char *name, const char *parent) {
-    cb_data_t *cbd=(cb_data_t*)userdata;dTHX; SV *a1=newSVpv(name,0),*a2=newSVpv(parent,0);I32 rc=0;const char *result=NULL;dSP;ENTER;SAVETMPS;PUSHMARK(SP);XPUSHs(a1);XPUSHs(a2);PUTBACK;rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);SPAGAIN;if(rc>0){SV*r=POPs;if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){if(SvOK(r)){STRLEN l;const char*s=SvPV(r,l);result=strdup(s);}}else result=NULL;}else result=NULL;FREETMPS;LEAVE;SvREFCNT_dec(a1);SvREFCNT_dec(a2);return result;}
+    cb_data_t *cbd = (cb_data_t*)userdata; dTHX;
+    SV *a1 = newSVpv(name, 0), *a2 = newSVpv(parent, 0);
+    I32 rc = 0;
+    const char *result = NULL;
+    dSP;
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
+    XPUSHs(a1);
+    XPUSHs(a2);
+    PUTBACK;
+    rc = perl_call_sv(cbd->code_ref, G_SCALAR|G_EVAL);
+    SPAGAIN;
+    if(rc > 0){
+        SV *r = POPs;
+        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
+            if(SvOK(r)){
+                STRLEN l;
+                const char *s = SvPV(r, l);
+                result = strdup(s);
+            } else {
+                result = NULL;
+            }
+        } else {
+            result = NULL;
+        }
+    } else {
+        result = NULL;
+    }
+    FREETMPS;
+    LEAVE;
+    SvREFCNT_dec(a1);
+    SvREFCNT_dec(a2);
+    return result;
+}
+
 MODULE = Minijinja      PACKAGE = Minijinja     PREFIX = M_
 
 VERSIONCHECK: DISABLE
@@ -557,14 +686,14 @@ void M_apply_syntax(SV *env_sv, SV *opts_sv)
             HE *he;
             I32 key_len;
             const char *key;
-            
+
             hv_iterinit(hv);
             while ((he = hv_iternext(hv))) {
                 key = hv_iterkey(he, &key_len);
                 SV *val = hv_iterval(hv, he);
                 STRLEN val_len;
                 const char *str_val = SvPV(val, val_len);
-                
+
                 if (strEQ(key, "block_start")) config.block_start = str_val;
                 else if (strEQ(key, "block_end")) config.block_end = str_val;
                 else if (strEQ(key, "variable_start")) config.variable_start = str_val;
@@ -593,85 +722,170 @@ bool M_add_filter(SV *env_sv, char *name, SV *code_ref)
         if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
             croak("add_filter requires a code reference");
         }
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"filter");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = code_ref;
+        SvREFCNT_inc(code_ref);
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"filter");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_add_filter(pe->env, name, cb_filter_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_add_function(SV *env_sv, char *name, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe; cb_data_t *cbd;
+        perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
-        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("add_function requires a code reference"); }
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"function");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        pe = THIS(env_sv);
+        if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
+            croak("add_function requires a code reference");
+        }
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = code_ref;
+        SvREFCNT_inc(code_ref);
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"function");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_add_function(pe->env, name, cb_filter_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_add_test(SV *env_sv, char *name, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe; cb_data_t *cbd;
+        perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
-        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("add_test requires a code reference"); }
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"test");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        pe = THIS(env_sv);
+        if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
+            croak("add_test requires a code reference");
+        }
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = code_ref;
+        SvREFCNT_inc(code_ref);
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"test");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_add_test(pe->env, name, cb_filter_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_add_exception_function(SV *env_sv, char *name)
     PREINIT:
-        perl_mj_env_t *pe; cb_data_t *cbd;
+        perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = &PL_sv_undef; cbd->is_exception_fn = 1;
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"exception");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        pe = THIS(env_sv);
+        if (pe->env == NULL) XSRETURN_UNDEF;
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = &PL_sv_undef;
+        cbd->is_exception_fn = 1;
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"exception");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_add_function(pe->env, name, cb_exception_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_set_loader(SV *env_sv, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe; cb_data_t *cbd;
+        perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
-        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("set_loader requires a code reference"); }
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"loader");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        pe = THIS(env_sv);
+        if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
+            croak("set_loader requires a code reference");
+        }
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = code_ref;
+        SvREFCNT_inc(code_ref);
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"loader");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_set_loader(pe->env, cb_loader_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_set_auto_escape(SV *env_sv, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe; cb_data_t *cbd;
+        perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
-        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("set_auto_escape requires a code reference"); }
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"autoescape");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        pe = THIS(env_sv);
+        if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
+            croak("set_auto_escape requires a code reference");
+        }
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = code_ref;
+        SvREFCNT_inc(code_ref);
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"autoescape");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_set_auto_escape_callback(pe->env, cb_auto_escape_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
 bool M_set_path_join(SV *env_sv, SV *code_ref)
     PREINIT:
-        perl_mj_env_t *pe; cb_data_t *cbd;
+        perl_mj_env_t *pe;
+        cb_data_t *cbd;
     CODE:
         dTHX;
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
-        pe = THIS(env_sv); if (pe->env == NULL) XSRETURN_UNDEF;
-        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) { croak("set_path_join requires a code reference"); }
-        Newxz(cbd, 1, cb_data_t); cbd->pe = pe; cbd->code_ref = code_ref; SvREFCNT_inc(code_ref);
-        char kbuf[256]; int idx=0; STRLEN kl; do{snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"pathjoin");}while(hv_exists(cb_data_hv,kbuf,strlen(kbuf))); hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
+        pe = THIS(env_sv);
+        if (pe->env == NULL) XSRETURN_UNDEF;
+        if (!SvROK(code_ref) || SvTYPE(SvRV(code_ref)) != SVt_PVCV) {
+            croak("set_path_join requires a code reference");
+        }
+        Newxz(cbd, 1, cb_data_t);
+        cbd->pe = pe;
+        cbd->code_ref = code_ref;
+        SvREFCNT_inc(code_ref);
+        char kbuf[256];
+        int idx = 0;
+        STRLEN kl;
+        do{
+            snprintf(kbuf,sizeof(kbuf),"%p:%d:%s",(void*)pe->env,idx++,"pathjoin");
+        }while(hv_exists(cb_data_hv,kbuf,strlen(kbuf)));
+        hv_store(cb_data_hv,kbuf,strlen(kbuf),newSViv(PTR2IV(cbd)),0);
         RETVAL = mj_env_set_path_join_callback(pe->env, cb_path_join_wrapper, cbd, NULL);
     OUTPUT: RETVAL
 
