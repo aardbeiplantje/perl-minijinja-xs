@@ -58,8 +58,12 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
         return mj_value_new_undefined();
     }
 
+    /* Check for blessed scalar refs first (e.g., JSON::PP Boolean). These may or may not
+     * have an RV component depending on how they were created. */
     if (SvROK(sv)) {
         SV *rv = SvRV(sv);
+
+        /* Array reference — convert to minijinja list */
         if (SvTYPE(rv) == SVt_PVAV) {
             AV *av = (AV*)rv;
             mj_value list = mj_value_new_list();
@@ -72,7 +76,10 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
                 }
             }
             return list;
-        } else if (SvTYPE(rv) == SVt_PVHV) {
+        }
+
+        /* Hash reference — convert to minijinja object */
+        if (SvTYPE(rv) == SVt_PVHV) {
             HV *hv = (HV*)rv;
             mj_value obj = mj_value_new_object();
             HE *he;
@@ -87,6 +94,23 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
             }
             return obj;
         }
+
+        /* Scalar reference that is not array/hash — check for JSON::PP Boolean or stringify */
+        if (!SvOK(rv)) {
+            return mj_value_new_undefined();
+        }
+        /* Check for blessed scalar (e.g., JSON::PP Boolean). Minijinja treats any value whose string
+         * representation is empty or "0" as a boolean false. We replicate this behavior here. */
+        if (SvOBJECT(rv)) {
+            STRLEN len;
+            const char *str = SvPV_nolen(rv);
+            int is_false = (strcmp(str, "0") == 0 || str[0] == '\0');
+            return mj_value_new_bool(is_false ? 0 : 1);
+        }
+        /* Non-blessed scalar ref: treat as string */
+        STRLEN len;
+        const char *str = SvPV_nolen(rv);
+        return mj_value_new_string(str);
     }
 
     if (SvIOK(sv) && !SvNOK(sv) && !SvPOK(sv)) {

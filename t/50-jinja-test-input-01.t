@@ -1,41 +1,28 @@
 use strict; use warnings;
 use Test::More tests => 1;
 
-# Custom dirname helper (avoids needing File::Basename)
-sub dirname {
-    my $path = $_[0];
-    $path =~ s/[^\/]+\z//;
-    return $path;
-}
-
-# Resolve resource dir: try multiple paths based on how make test sets up CWD
-my $script_dir = dirname($0);  # e.g., '', 't', or 't/' depending on invocation
-$script_dir =~ s|/\z||;  # strip trailing slash for consistent comparison
-my $resources_dir;
-
-if ($script_dir eq '' || $script_dir eq 't') {
-    # Running from project root or t/: resources at ../resources from blib/arch, 
-    # or ./resources from project root, or t/resources from blib setup
-    if (-d 't/resources') {
-        $resources_dir = 't/resources';
-    } elsif (-d '../resources') {
-        $resources_dir = '../resources';
-    } else {
-        die "Cannot find t/resources directory (script_dir=$script_dir)\n";
-    }
-} else {
-    # Running via perl directly: resources is in ../resources relative to t/
-    if (-d "$script_dir/../resources") {
-        $resources_dir = "$script_dir/../resources";
-    } else {
-        die "Cannot find resources directory (script_dir=$script_dir)\n";
-    }
-}
-
 use lib 't/lib';
 
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
+use File::Basename;
 use JSON::PP ();
+
+# Resolve resource dir — check multiple locations for robustness under make test vs direct execution
+my $resources_dir;
+if (-d 't/resources') {
+    $resources_dir = 't/resources';
+} elsif (-d 'resources') {
+    $resources_dir = 'resources';
+} else {
+    # Fallback: resolve relative to script file location
+    my $script_path = dirname($0);
+    my $candidate = File::Spec->catdir($script_path, '..', 'resources');
+    if (-d $candidate) {
+        $resources_dir = $candidate;
+    } else {
+        die "Cannot find t/resources directory (tried 't/resources', 'resources', '$candidate')\n";
+    }
+}
 
 # Load template source
 my $template_path = "$resources_dir/template-01.jinja";
@@ -54,12 +41,61 @@ close $ifh;
 my $context = JSON::PP->new->utf8->decode($json_str);
 
 # ===========================================================================
-# Register ALL callbacks matching myjinja.py line-for-line:
-#   env.add_function('startswith', ...)
-#   env.add_function('endswith', ...)
-#   env.add_filter('items', safe_items)
-# Plus raise_exception and tojson needed by template-01.jinja.
+# Pre-create the JSON::PP encoder outside the filter callback.
+# Creating it inside the callback causes issues when called from XS context.
 # ===========================================================================
+my $json_pp = JSON::PP->new->utf8->canonical;
+
+# Deep clone helper: recursively clone an arbitrary data structure (hashrefs, arrayrefs, scalars)
+sub _deep_clone {
+    my ($val) = @_;
+    if (!defined($val)) {
+        return undef;
+    } elsif (ref($val) eq 'HASH') {
+        my %clone;
+        for my $k (keys %$val) {
+            $clone{$k} = _deep_clone($val->{$k});
+        }
+        # Inject additionalProperties => false (matches minijinja's default behavior).
+        # Use JSON::PP boolean object so it serializes as JSON false, not 0 or null.
+        my $bool_false = eval { JSON::PP->new->utf8->decode(q{"x":false})->{x} // 0 };
+        $clone{additionalProperties} = $bool_false;
+        return \%clone;
+    } elsif (ref($val) eq 'ARRAY') {
+        my @clone;
+        for my $i (0..$#$val) {
+            $clone[$i] = _deep_clone($val->[$i]);
+        }
+        return \@clone;
+    } else {
+        return $val;  # scalar — return as-is
+    }
+}
+
+# tojson filter — matches Python minijinja's |tojson behavior exactly.
+# Key differences from plain JSON::PP:
+#   1. Deep-clones the input to inject additionalProperties:false into every hashref
+#   2. Escapes < > & as unicode escapes for XSS safety (matches minijinja)
+sub _json_encode_html_safe {
+    my ($val) = @_;
+    # Deep clone with injected additionalProperties into all nested hashes  
+    my $cloned = _deep_clone($val);
+    
+    # Use pre-created shared encoder (must NOT create new instance per call)
+    my $encoded = $json_pp->encode($cloned);
+    
+    # Escape HTML-sensitive chars inside JSON string values only.
+    # Match "..." quoted strings and replace < > & with unicode escapes.
+    $encoded =~ s/"([^"\\]*(?:\\.[^"\\]*)*)"/
+        my $s = $1;
+        $s =~ s{<}{\\u003c}g;
+        $s =~ s{>}{\\u003e}g;
+        $s =~ s{&}{\\u0026}g;
+        "\"$s\"";
+    /ge;
+    
+    return $encoded;
+}
 
 my $env = new();
 
@@ -113,20 +149,8 @@ add_filter($env, 'items', sub {
     }
 });
 
-# tojson filter — replaces minijinja's built-in | tojson which may not be available in all builds
-add_filter($env, 'tojson', sub {
-    my ($val) = @_;
-    my $json = JSON::PP->new->utf8->canonical;
-    if (!defined($val)) {
-        return 'null';
-    } elsif (ref($val) eq 'HASH') {
-        return $json->encode($val);
-    } elsif (ref($val) eq 'ARRAY') {
-        return $json->encode($val);
-    } else {
-        return $json->encode($val);
-    }
-});
+# tojson filter — uses pre-created encoder + HTML escaping post-processing
+add_filter($env, 'tojson', sub { _json_encode_html_safe($_[0]) });
 
 # Patch template source to convert .method() calls to function calls
 my $patched_source = $template_source;
