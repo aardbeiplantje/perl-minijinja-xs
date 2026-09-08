@@ -110,6 +110,9 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
         /* Non-blessed scalar ref: treat as string */
         STRLEN len;
         const char *str = SvPV_nolen(rv);
+        if (str[0] == '\0') {
+            return mj_value_new_bool(0);
+        }
         return mj_value_new_string(str);
     }
 
