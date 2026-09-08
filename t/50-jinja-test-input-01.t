@@ -5,7 +5,7 @@ use lib 't/lib';
 
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
-use JSON::PP ();
+use JSON ();
 
 # Resolve resource dir — check multiple locations for robustness under make test vs direct execution
 my $resources_dir;
@@ -38,52 +38,23 @@ local $/;
 my $json_str = <$ifh>;
 close $ifh;
 
-my $context = JSON::PP->new->utf8->decode($json_str);
+my $context = JSON->new->utf8->decode($json_str);
 
 # ===========================================================================
-# Pre-create the JSON::PP encoder outside the filter callback.
+# Pre-create the JSON encoder outside the filter callback.
 # Creating it inside the callback causes issues when called from XS context.
 # ===========================================================================
-my $json_pp = JSON::PP->new->utf8->canonical;
-
-# Deep clone helper: recursively clone an arbitrary data structure (hashrefs, arrayrefs, scalars)
-sub _deep_clone {
-    my ($val) = @_;
-    if (!defined($val)) {
-        return undef;
-    } elsif (ref($val) eq 'HASH') {
-        my %clone;
-        for my $k (keys %$val) {
-            $clone{$k} = _deep_clone($val->{$k});
-        }
-        # Inject additionalProperties => false (matches minijinja's default behavior).
-        # Use JSON::PP boolean object so it serializes as JSON false, not 0 or null.
-        my $bool_false = eval { JSON::PP->new->utf8->decode(q{"x":false})->{x} // 0 };
-        $clone{additionalProperties} = $bool_false;
-        return \%clone;
-    } elsif (ref($val) eq 'ARRAY') {
-        my @clone;
-        for my $i (0..$#$val) {
-            $clone[$i] = _deep_clone($val->[$i]);
-        }
-        return \@clone;
-    } else {
-        return $val;  # scalar — return as-is
-    }
-}
+my $json_pp = JSON->new->utf8->canonical;
 
 # tojson filter — matches Python minijinja's |tojson behavior exactly.
-# Key differences from plain JSON::PP:
-#   1. Deep-clones the input to inject additionalProperties:false into every hashref
-#   2. Escapes < > & as unicode escapes for XSS safety (matches minijinja)
+# Key differences from plain JSON::XS;
+#   1. Escapes < > & ' as unicode escapes for XSS safety (matches minijinja)
 sub _json_encode_html_safe {
     my ($val) = @_;
-    # Deep clone with injected additionalProperties into all nested hashes  
-    my $cloned = _deep_clone($val);
-    
+
     # Use pre-created shared encoder (must NOT create new instance per call)
-    my $encoded = $json_pp->encode($cloned);
-    
+    my $encoded = $json_pp->encode($val);
+
     # Escape HTML-sensitive chars inside JSON string values only.
     # Match "..." quoted strings and replace < > & with unicode escapes.
     $encoded =~ s/"([^"\\]*(?:\\.[^"\\]*)*)"/
@@ -91,9 +62,10 @@ sub _json_encode_html_safe {
         $s =~ s{<}{\\u003c}g;
         $s =~ s{>}{\\u003e}g;
         $s =~ s{&}{\\u0026}g;
+        $s =~ s{'}{\\u0027}g;
         "\"$s\"";
     /ge;
-    
+
     return $encoded;
 }
 
@@ -133,16 +105,16 @@ add_filter($env, 'items', sub {
         return [];
     } elsif (ref($value) eq 'HASH') {
         # hashref → list of [key, value] pairs (mirrors dict.items())
-        return [map { [$_, $value->{$_}] } keys %{$value}];
+        return [map { [$_, $value->{$_}] } sort {$a cmp $b} keys %{$value}];
     } elsif (ref($value) eq 'ARRAY') {
         # arrayref is not a mapping — return empty list like safe_items for non-dict iterables
         return [];
     } else {
         # string: try JSON decode to see if it's a dict-like object
-        eval {
-            my $decoded = JSON::PP->new->utf8->decode($value);
+        return eval {
+            my $decoded = JSON->new->utf8->decode($value);
             if (ref($decoded) eq 'HASH') {
-                return [map { [$_, $decoded->{$_}] } keys %{$decoded}];
+                return [map { [$_, $decoded->{$_}] } sort {$a cmp $b} keys %{$decoded}];
             }
         };
         return [];
@@ -152,21 +124,8 @@ add_filter($env, 'items', sub {
 # tojson filter — uses pre-created encoder + HTML escaping post-processing
 add_filter($env, 'tojson', sub { _json_encode_html_safe($_[0]) });
 
-# Patch template source to convert .method() calls to function calls
-my $patched_source = $template_source;
-
-# Convert .startswith()/ .endswith() method calls to function form
-$patched_source =~ s/\.startswith\s*\((.*)\)/startswith($1)/sg;
-$patched_source =~ s/\.endswith\s*\((.*)\)/endswith($1)/sg;
-
-# Remove lines with unsupported chained Python-style method calls (split/lstrip/rstrip).
-# These appear inside conditional blocks for reasoning_content extraction which
-# won't be triggered by standard message data (no reasoning_content field).
-# We replace them with empty set statements so those code paths become no-ops.
-$patched_source =~ s/^(\s+{%- set (?:\w+_)?content = )[^%]*%\}$/$1 '' %}/smg;
-
 # Render the template using input from input-01.json as context
-my $result = render_str($env, 'template-01.jinja', $patched_source, $context);
+my $result = render_str($env, 'template-01.jinja', $template_source, $context);
 
 if (!defined($result)) {
     my $detail = error_exists() ? error_detail() : 'unknown error';
