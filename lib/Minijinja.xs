@@ -912,7 +912,7 @@ int M_error_kind()
     CODE:
         dTHX;
         if (!mj_err_is_set()) {
-            XSRETURN(-1);
+            XSRETURN_UNDEF;
         } else {
             ST(0) = sv_2mortal(newSViv((IV)mj_err_get_kind()));
             XSRETURN(1);
