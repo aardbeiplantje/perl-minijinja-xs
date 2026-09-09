@@ -6,7 +6,7 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
-use Minijinja::Functions qw(func_raise_exception);
+use Minijinja::Functions qw(func_raise_exception func_startswith func_endswith);
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
 use JSON::PP ();
@@ -55,26 +55,12 @@ sub jinja_render {
 
     # startswith/endswith as global functions — Rust only provides these as tests (is_startingwith/is_endingwith),
     # but templates need them callable as functions via .method() → function() patching below.
-    add_function($env, 'startswith', sub {
-        my ($str, $prefix) = @_;
-        return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
-    });
-    add_function($env, 'endswith', sub {
-        my ($str, $suffix) = @_;
-        return defined($str) && defined($suffix) && length($str) >= length($suffix)
-               ? substr($str, -length($suffix)) eq $suffix : 0;
-    });
+    add_function($env, 'startswith', \&func_startswith);
+    add_function($env, 'endswith', \&func_endswith);
 
     # Also register as Jinja tests so they can be used with 'is' syntax
-    add_test($env, 'istartswith', sub {
-        my ($str, $prefix) = @_;
-        return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
-    });
-    add_test($env, 'endswith', sub {
-        my ($str, $suffix) = @_;
-        return defined($str) && defined($suffix) && length($str) >= length($suffix)
-               ? substr($str, -length($suffix)) eq $suffix : 0;
-    });
+    add_test($env, 'istartswith', sub { func_startswith(@_); });
+    add_test($env, 'endswith', sub { func_endswith(@_); });
 
     # raise_exception as a regular function that dies to abort rendering
     add_function($env, 'raise_exception', \&func_raise_exception);
