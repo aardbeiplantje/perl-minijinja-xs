@@ -53,23 +53,8 @@ sub jinja_render {
                ? substr($str, -length($suffix)) eq $suffix : 0;
     });
 
-    # JSON encoding filter (replaces minijinja's built-in | tojson which may not be available in all builds)
-    add_filter($env, 'tojson', sub {
-        my ($val) = @_;
-        my $json = JSON::PP->new->utf8->canonical;
-        if (!defined($val)) {
-            return 'null';
-        } elsif (ref($val) eq 'HASH') {
-            return $json->encode($val);
-        } elsif (ref($val) eq 'ARRAY') {
-            return $json->encode($val);
-        } else {
-            return $json->encode($val);
-        }
-    });
-
-    # Register startswith/endswith as global functions (not methods) for compatibility
-    # Templates using .startswith() need to be patched to use the function form
+    # startswith/endswith as global functions — Rust only provides these as tests (is_startingwith/is_endingwith),
+    # but templates need them callable as functions via .method() → function() patching below.
     add_function($env, 'startswith', sub {
         my ($str, $prefix) = @_;
         return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
@@ -91,10 +76,12 @@ sub jinja_render {
                ? substr($str, -length($suffix)) eq $suffix : 0;
     });
 
-    # Register raise_exception as a regular function that dies to abort rendering
+    # raise_exception as a regular function that dies to abort rendering
     add_function($env, 'raise_exception', \&func_raise_exception);
 
-    # Note: namespace() is already available as a builtin in minijinja (see defaults.rs)
+    # Note: the following are already available as builtins in minijinja (loaded automatically via defaults.rs):
+    #   - namespace: creates mutable objects for template scoping
+    #   - tojson: JSON encoding with HTML-safe escaping (requires json feature, which is enabled)
 
     # Apply per-test callbacks on top of defaults (custom names shadow defaults)
     if ($opts && ref($opts) eq 'HASH') {
