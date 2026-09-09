@@ -113,8 +113,8 @@
 
 | Phase | Description | Complexity |
 |-------|-------------|------------|
-| **Phase 4** | Array filters (`first`, `last`, `list`, `slice`, `sort`, `reverse`, `min`, `max`, etc.) | Easy to Complex |
-| **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder |
+| **Phase 4** | Array filters (remaining: sort, min, max, join, map, selectattr/rejectattr) | Medium to Complex |
+| **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder |  
 | **Phase 6** | Object filters and methods (`get`, `keys`, `values`, `dictsort`) | Easy/Medium |
 | **Phase 7** | Global functions (`namespace`, `strftime_now`, `range`) | Varies |
 
@@ -218,17 +218,26 @@ Implemented in `lib/Minijinja/Functions.pm`:
 
 **Goal**: Add array manipulation and inspection filters.
 
-| Filter | Complexity | Notes |
-|--------|-----------|-------|
-| `first` / `last` | Trivial | Return first/last element or undefined if empty |
-| `list` | Trivial | Shallow copy of arrayref |
-| `slice` [start:stop:step] | Medium | Python-style slicing — negative indices support optional initially |
-| `sort` [reverse] [attribute] | Harder | With optional attribute access for object arrays; reverse flag only for now |
-| `reverse` | Easy | Returns reversed copy |
-| `min` / `max` [attribute] | Medium | Find min/max; attribute access deferred initially |
-| `join` sep attr | Harder | Join with separator; attribute extraction from objects deferred initially |
-| `map` attribute | Harder | Extract attribute values into new array; needs callback integration with object types |
-| `selectattr` / `rejectattr` | Complex | Requires test predicate system (see Phase 5) |
+| Filter | Complexity | Notes | Status |
+|--------|-----------|-------|--------|
+| `first` / `last` | Trivial | Return first/last element or undefined if empty | ✅ Done |
+| `list` | Trivial | Shallow copy of arrayref | ✅ Done |  
+| `reverse` | Easy | Returns reversed copy | ✅ Done |
+| `slice` [start:stop:step] | Medium | Python-style slicing — negative indices support | ✅ Done |
+| `sort` [reverse] [attribute] | Harder | With optional attribute access for object arrays; reverse flag only for now | ⏳ Pending |
+| `min` / `max` [attribute] | Medium | Find min/max; attribute access deferred initially | ⏳ Pending |
+| `join` sep attr | Harder | Join with separator; attribute extraction from objects deferred initially | ⏳ Pending |
+| `map` attribute | Harder | Extract attribute values into new array; needs callback integration with object types | ⏳ Pending |
+| `selectattr` / `rejectattr` | Complex | Requires test predicate system (see Phase 5) | ⏳ Pending (Phase 5) |
+
+**Status: 🟡 PARTIALLY COMPLETE** (trivial/easy items done, commit `48cef24`)
+
+Implemented in `lib/Minijinja/Functions.pm`:
+- `filter_list` — shallow copy via `[ @{$val} ]`
+- `filter_first` — returns `$val->[0]` or undef for empty/undefined  
+- `filter_last` — pops last element from array copy to avoid mutating input
+- `filter_reverse` — reversed copy using Perl's built-in `reverse()`
+- `filter_array_slice` — Python-style slicing with full negative index support and optional step parameter
 
 ---
 
@@ -277,7 +286,7 @@ These would need a unified comparison helper in XS or Perl that handles type coe
 ## Recommended Implementation Order
 
 ```
-Phase 6 → Phase 4 (trivial first) → Phase 5 → Phase 7
+Phase 6 → Phase 4 (remaining) → Phase 5 → Phase 7  
 ```
 
-**Note**: Phases 1, 2, and 3 are complete. Remaining phases ordered by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
+**Note**: Phases 1-3 are complete. Phase 4 is partially complete (trivial/easy items done). Remaining phases ordered by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
