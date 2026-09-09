@@ -37,6 +37,8 @@ our @EXPORT_OK = qw(
     func_startswith
     func_endswith
 
+    filter_has_prefix filter_has_suffix
+
     filter_upper filter_lower
     filter_strip filter_rstrip filter_lstrip
     filter_title filter_capitalize
@@ -167,6 +169,19 @@ sub func_startswith {
 # endswith — identical lambda semantics to llama.cpp jinja parser.
 # Checks if the given string ends with the specified suffix.
 sub func_endswith {
+    my ($s, $suffix) = @_;
+    return !defined($s) || !defined($suffix) ? 0 : length($s) >= length($suffix)
+           && substr($s, -length($suffix)) eq $suffix;
+}
+
+# has_prefix — filter version of startswith (same logic)
+sub filter_has_prefix {
+    my ($s, $prefix) = @_;
+    return !defined($s) || !defined($prefix) ? 0 : substr($s, 0, length($prefix)) eq $prefix;
+}
+
+# has_suffix — filter version of endswith (same logic)
+sub filter_has_suffix {
     my ($s, $suffix) = @_;
     return !defined($s) || !defined($suffix) ? 0 : length($s) >= length($suffix)
            && substr($s, -length($suffix)) eq $suffix;
@@ -1362,6 +1377,8 @@ sub exportable_map {
         filter_items          => 'filter',
         func_startswith       => 'function',
         func_endswith         => 'function',
+        filter_has_prefix     => 'filter',
+        filter_has_suffix     => 'filter',
 
         # String Filters (Phase 2)
         filter_upper          => 'filter',

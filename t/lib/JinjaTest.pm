@@ -6,7 +6,7 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
-use Minijinja qw(func_raise_exception func_startswith func_endswith);
+use Minijinja qw(func_raise_exception func_startswith func_endswith filter_has_prefix filter_has_suffix);
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
 use JSON::PP ();
@@ -43,15 +43,8 @@ sub jinja_render {
     }
 
     # Register default helpers (always applied; can be overridden by per-test callbacks)
-    add_filter($env, 'has_prefix', sub {
-        my ($str, $prefix) = @_;
-        return defined($str) && defined($prefix) ? substr($str, 0, length($prefix)) eq $prefix : 0;
-    });
-    add_filter($env, 'has_suffix', sub {
-        my ($str, $suffix) = @_;
-        return defined($str) && defined($suffix) && length($str) >= length($suffix)
-               ? substr($str, -length($suffix)) eq $suffix : 0;
-    });
+    add_filter($env, 'has_prefix', \&filter_has_prefix);
+    add_filter($env, 'has_suffix', \&filter_has_suffix);
 
     # startswith/endswith as global functions — Rust only provides these as tests (is_startingwith/is_endingwith),
     # but templates need them callable as functions via .method() → function() patching below.
