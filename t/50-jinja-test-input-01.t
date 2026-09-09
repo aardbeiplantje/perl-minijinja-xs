@@ -5,8 +5,8 @@ use lib 't/lib';
 
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
-use JSON::XS ();
-use Minijinja::Functions qw(filter_tojson filter_items func_startswith func_endswith);
+use JSON::PP ();
+use Minijinja::Functions qw(filter_tojson filter_items func_startswith func_endswith filter_upper filter_lower filter_strip filter_rstrip filter_lstrip filter_title filter_capitalize filter_split filter_rsplit filter_replace filter_length_str);
 
 # Resolve resource dir — check multiple locations for robustness under make test vs direct execution
 my $resources_dir;
@@ -39,8 +39,7 @@ local $/;
 my $json_str = <$ifh>;
 close $ifh;
 
-my $context = JSON::XS->new->utf8->decode($json_str);
-
+my $context = JSON::PP->new->utf8->decode($json_str);
 my $env = new();
 
 # startswith — identical lambda semantics to llama.cpp jinja parser
