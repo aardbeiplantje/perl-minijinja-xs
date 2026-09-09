@@ -6,6 +6,9 @@ our $VERSION = "0.1.0";
 
 use Exporter 'import';
 
+# POSIX::strftime for strftime_now (core module)
+use POSIX qw(strftime);
+
 our @EXPORT_OK = qw(
     filter_tojson
     filter_items
@@ -26,6 +29,23 @@ our @EXPORT_OK = qw(
     filter_list filter_sort filter_reverse
     filter_join filter_map
     filter_min filter_max
+
+    filter_get filter_keys filter_values filter_dictsort
+
+    func_is_string func_is_integer func_is_float func_is_number
+    func_is_boolean func_is_callable func_is_none func_is_undefined func_is_defined
+    func_is_mapping func_is_iterable func_is_sequence
+    func_is_lower func_is_upper
+    func_is_odd func_is_even
+    func_is_false func_is_true
+    func_is_divisibleby func_is_in
+    func_is_eq func_is_equalto func_is_ne func_is_lt func_is_le func_is_gt func_is_ge
+    test_predicate_to_bool
+
+    filter_selectattr filter_rejectattr filter_select filter_reject
+
+
+    func_raise_exception func_range filter_strftime_now func_namespace
 );
 
 # Pre-create shared JSON encoder instance for reuse in callbacks.
@@ -344,5 +364,944 @@ sub filter_array_slice {
 
     return \@result;
 }
+
+# sort — sorted copy of array with optional reverse and attribute access
+sub filter_sort {
+    my ($val, $reverse, $attribute) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @arr = @$val;
+
+    if (@arr == 0) {
+        return [];
+    }
+
+    my @sorted;
+
+    if (defined($attribute)) {
+        # Sort by attribute value extracted from each element
+        @sorted = sort {
+            my $a_val = _extract_attr($a, $attribute);
+            my $b_val = _extract_attr($b, $attribute);
+            my $cmp = _compare_values($a_val, $b_val);
+            $reverse ? -$cmp : $cmp;
+        } @arr;
+    } else {
+        # Sort elements directly with smart comparison
+        @sorted = sort {
+            my $cmp = _compare_values($a, $b);
+            $reverse ? -$cmp : $cmp;
+        } @arr;
+    }
+
+    return \@sorted;
+}
+
+# min — find minimum value in array with optional attribute access
+sub filter_min {
+    my ($val, $attribute) = @_;
+
+    return undef unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @arr = grep { defined($_) && $_ ne '' } @$val;
+    return undef if @arr == 0;
+
+    if (@arr == 1) {
+        return defined($attribute) ? _extract_attr($arr[0], $attribute) : $arr[0];
+    }
+
+    if (defined($attribute)) {
+        my @with_vals = map { [$_, _extract_attr($_, $attribute)] } @arr;
+        my $min_pair = shift @with_vals;
+        for my $pair (@with_vals) {
+            if (_compare_values($pair->[1], $min_pair->[1]) < 0) {
+                $min_pair = $pair;
+            }
+        }
+        return $min_pair->[1];
+    } else {
+        my $min_val = $arr[0];
+        for my $item (@arr[1..$#arr]) {
+            if (_compare_values($item, $min_val) < 0) {
+                $min_val = $item;
+            }
+        }
+        return $min_val;
+    }
+}
+
+# max — find maximum value in array with optional attribute access
+sub filter_max {
+    my ($val, $attribute) = @_;
+
+    return undef unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @arr = grep { defined($_) && $_ ne '' } @$val;
+    return undef if @arr == 0;
+
+    if (@arr == 1) {
+        return defined($attribute) ? _extract_attr($arr[0], $attribute) : $arr[0];
+    }
+
+    if (defined($attribute)) {
+        my @with_vals = map { [$_, _extract_attr($_, $attribute)] } @arr;
+        my $max_pair = shift @with_vals;
+        for my $pair (@with_vals) {
+            if (_compare_values($pair->[1], $max_pair->[1]) > 0) {
+                $max_pair = $pair;
+            }
+        }
+        return $max_pair->[1];
+    } else {
+        my $max_val = $arr[0];
+        for my $item (@arr[1..$#arr]) {
+            if (_compare_values($item, $max_val) > 0) {
+                $max_val = $item;
+            }
+        }
+        return $max_val;
+    }
+}
+
+# join — join array elements with separator, optional attribute extraction
+sub filter_join {
+    my ($val, $separator, $attribute) = @_;
+
+    return '' unless defined($val);
+
+    my @items;
+
+    if (ref($val) eq 'ARRAY') {
+        @items = @$val;
+    } elsif (defined($val) && ref($val) ne 'HASH' && ref($val) ne 'CODE') {
+        @items = ($val);
+    } else {
+        return '';
+    }
+
+    # Filter out undefined values
+    @items = grep { defined($_) } @items;
+
+    if (!defined($attribute)) {
+        # Convert all items to strings and join
+        @items = map { "$_" } @items;
+        return join($separator || '', @items);
+    } else {
+        # Extract attribute from each item and join
+        @items = map { _extract_attr($_, $attribute) // '' } @items;
+        return join($separator || '', @items);
+    }
+}
+
+# map — extract attribute values into new array
+sub filter_map {
+    my ($val, $attribute) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val) {
+        if (!defined($item)) {
+            push @result, undef;
+        } else {
+            push @result, _extract_attr($item, $attribute);
+        }
+    }
+
+    return \@result;
+}
+
+# --- Helper functions (internal) ---
+
+# extract_attr — extract attribute value from object/hashref/scalar
+sub _extract_attr {
+    my ($obj, $attr) = @_;
+
+    return $obj unless defined($obj) && $attr;
+
+    if (ref($obj) eq 'HASH') {
+        return exists($obj->{$attr}) ? $obj->{$attr} : undef;
+    } elsif (ref($obj) eq 'ARRAY') {
+        # Try numeric index first
+        if ($attr =~ /^-?\d+$/) {
+            my $idx = int($attr);
+            return $idx >= 0 && $idx < scalar(@{$obj}) ? $obj->[$idx] : undef;
+        }
+        return undef;
+    } else {
+        # Scalar: try to treat as string key (unlikely but handle gracefully)
+        return undef;
+    }
+}
+
+# compare_values — smart comparison between two values for sort/min/max
+sub _compare_values {
+    my ($a, $b) = @_;
+
+    # Handle undefined values
+    if (!defined($a) && !defined($b)) { return 0; }
+    if (!defined($a)) { return 1; }   # undef sorts last
+    if (!defined($b)) { return -1; }
+
+    # Force scalar context
+    my $sa = "$a";
+    my $sb = "$b";
+
+    # If both look like numbers, do numeric comparison
+    if ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) {
+        return ($sa + 0) <=> ($sb + 0);
+    }
+
+    # String comparison
+    return $sa cmp $sb;
+}
+
+# --- Test Functions (Phase 5) ---
+
+# Helper: determine if a value is "undefined" in Jinja terms (Perl undef or no ref)
+sub _is_undefined {
+    my ($val) = @_;
+    return !defined($val) || $val eq 'UNDEFINED';
+}
+
+# Helper: type name for debugging/testing (maps to minijinja types)
+sub _type_name {
+    my ($val) = @_;
+    return 'undefined' unless defined($val);
+    return ref($val) if ref($val) eq 'HASH' || ref($val) eq 'ARRAY' || ref($val) eq 'CODE';
+    my $s = "$val";
+    if ($s =~ /^-?(?:\d+)(?:\.0)?$/ && $s !~ /\./) {
+        return 'integer';
+    } elsif ($s =~ /^-?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/) {
+        return 'float';
+    } else {
+        return 'string';
+    }
+}
+
+# is_string — check if value is a string (not undefined, not array/hashref/coderef)
+sub func_is_string {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return ref($val) ? 0 : 1;  # scalar string = no ref
+}
+
+# is_integer — check if value is an integer (no decimal point in string form)
+sub func_is_integer {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $s = "$val";
+    if (ref($val)) { return 0; }  # hashref/arrayref/coderef are not integers
+    return ($s =~ /^-?\d+$/) ? 1 : 0;
+}
+
+# is_float — check if value is a float (has decimal or exponent)
+sub func_is_float {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $s = "$val";
+    if (ref($val)) { return 0; }
+    return ($s =~ /^-?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $s !~ /^-?(\d+)\.0$/ || $s =~ /[eE]/) ? 1 : 0;
+}
+
+# is_number — check if value is any numeric type (int or float)
+sub func_is_number {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $s = "$val";
+    if (ref($val)) { return 0; }
+    return ($s =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) ? 1 : 0;
+}
+
+# is_boolean — check if value is a boolean (string "true" or "false")
+sub func_is_boolean {
+    my ($val) = @_;
+    return 0 unless defined($val);
+    my $s = "$val";
+    return ($s eq 'true' || $s eq 'false') ? 1 : 0;
+}
+
+# is_callable — check if value is callable (coderef)
+sub func_is_callable {
+    my ($val) = @_;
+    return ref($val) eq 'CODE' ? 1 : 0;
+}
+
+# is_none — check if value is None/null/undefined
+sub func_is_none {
+    my ($val) = @_;
+    return 0 unless defined($val);
+    my $s = "$val";
+    return ($s eq 'None' || $s eq '' && !ref($val)) ? 1 : 0;
+}
+
+# is_undefined — check if value is undefined
+sub func_is_undefined {
+    my ($val) = @_;
+    return _is_undefined($val) ? 1 : 0;
+}
+
+# is_defined — check if value is defined (opposite of is_undefined)
+sub func_is_defined {
+    my ($val) = @_;
+    return _is_undefined($val) ? 0 : 1;
+}
+
+# is_mapping — check if value is a mapping (hashref)
+sub func_is_mapping {
+    my ($val) = @_;
+    return ref($val) eq 'HASH' ? 1 : 0;
+}
+
+# is_iterable — check if value can be iterated over (arrayref, string, hashref)
+sub func_is_iterable {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return ref($val) ? (ref($val) eq 'ARRAY' || ref($val) eq 'HASH') : 1;  # strings are iterable too
+}
+
+# is_sequence — check if value is a sequence (arrayref or string)
+sub func_is_sequence {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return ref($val) ? (ref($val) eq 'ARRAY' || !ref($val)) : 0;  # scalars and arrays are sequences
+}
+
+# is_lower — check if all cased characters in string are lowercase
+sub func_is_lower {
+    my ($val) = @_;
+    return 0 unless defined($val) && !ref($val);
+    my $s = "$val";
+    return 0 unless $s =~ /[a-zA-Z]/;  # must have at least one cased char
+    return ($s eq lc($s)) ? 1 : 0;
+}
+
+# is_upper — check if all cased characters in string are uppercase
+sub func_is_upper {
+    my ($val) = @_;
+    return 0 unless defined($val) && !ref($val);
+    my $s = "$val";
+    return 0 unless $s =~ /[a-zA-Z]/;  # must have at least one cased char
+    return ($s eq uc($s)) ? 1 : 0;
+}
+
+# is_odd — check if integer is odd
+sub func_is_odd {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $n = int(0 + $val);
+    return ($n % 2 != 0) ? 1 : 0;
+}
+
+# is_even — check if integer is even
+sub func_is_even {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $n = int(0 + $val);
+    return ($n % 2 == 0) ? 1 : 0;
+}
+
+# is_false — identity check against False
+sub func_is_false {
+    my ($val) = @_;
+    my $s = "$val";
+    return ($s eq 'false' || $s eq 'False') ? 1 : 0;
+}
+
+# is_true — identity check against True
+sub func_is_true {
+    my ($val) = @_;
+    my $s = "$val";
+    return ($s eq 'true' || $s eq 'True') ? 1 : 0;
+}
+
+# is_divisibleby — check if number is divisible by divisor (mod == 0)
+sub func_is_divisibleby {
+    my ($val, $divisor) = @_;
+    return 0 if _is_undefined($val) || !defined($divisor);
+    if ($divisor == 0) { return 0; }  # division by zero not allowed
+    my $n = 0 + $val;
+    return ($n % $divisor == 0) ? 1 : 0;
+}
+
+# is_in — membership test: needle in haystack (arrayref, string, or hashref keys)
+sub func_is_in {
+    my ($needle, $haystack) = @_;
+    return 0 if _is_undefined($needle) || !defined($haystack);
+
+    if (ref($haystack) eq 'ARRAY') {
+        for my $item (@{$haystack}) {
+            return 1 if "$needle" eq "$item";
+        }
+        return 0;
+    } elsif (ref($haystack) eq 'HASH') {
+        return exists($haystack->{$needle}) ? 1 : 0;
+    } elsif (!ref($haystack)) {
+        # String membership check
+        return index("$haystack", "$needle") >= 0 ? 1 : 0;
+    } else {
+        return 0;
+    }
+}
+
+# Comparison-based tests
+
+# Helper: comparison operator wrapper for Jinja tests
+# Accepts two values and a Perl comparison function
+sub _compare_test {
+    my ($a, $b, $cmp_func) = @_;
+    return 0 if _is_undefined($a) || _is_undefined($b);
+
+    # Force numeric context for numbers, string otherwise
+    my $sa = "$a";
+    my $sb = "$b";
+
+    # If both are numeric strings, compare numerically
+    if ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) {
+        return $cmp_func->(0 + $sa, 0 + $sb);
+    }
+
+    # String comparison
+    return $cmp_func->($sa, $sb);
+}
+
+# is_eq / is_equalto — equality (==)
+sub func_is_eq {
+    my ($a, $b) = @_;
+    return _compare_test($a, $b, sub { $_[0] eq $_[1] ? 1 : 0 });
+}
+
+sub func_is_equalto {
+    my ($a, $b) = @_;
+    return func_is_eq($a, $b);
+}
+
+# is_ne — not equal (!=)
+sub func_is_ne {
+    my ($a, $b) = @_;
+    return _compare_test($a, $b, sub { $_[0] ne $_[1] ? 1 : 0 });
+}
+
+# is_lt — less than (<)
+sub func_is_lt {
+    my ($a, $b) = @_;
+    return _compare_test($a, $b, sub { $_[0] < $_[1] ? 1 : 0 });
+}
+
+# is_le — less than or equal (<=)
+sub func_is_le {
+    my ($a, $b) = @_;
+    return _compare_test($a, $b, sub { $_[0] <= $_[1] ? 1 : 0 });
+}
+
+# is_gt — greater than (>)
+sub func_is_gt {
+    my ($a, $b) = @_;
+    return _compare_test($a, $b, sub { $_[0] > $_[1] ? 1 : 0 });
+}
+
+# is_ge — greater than or equal (>=)
+sub func_is_ge {
+    my ($a, $b) = @_;
+    return _compare_test($a, $b, sub { $_[0] >= $_[1] ? 1 : 0 });
+}
+
+# test_predicate_to_bool — convert any value to a boolean (truthy/falsy like Jinja)
+# Used internally by select/reject when passing predicates from templates
+sub test_predicate_to_bool {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    if (!defined($val) || $val eq '' || $val eq 'false' || $val eq 'False' || $val eq 'None') {
+        return 0;
+    }
+    return 1;
+}
+
+# --- Select/Reject Filters (Phase 5 continuation) ---
+
+# Helper: evaluate a test predicate on a single item for selectattr/rejectattr/select/reject
+sub _evaluate_select_pred {
+    my ($item, $attribute, $test_name, $args) = @_;
+
+    if (defined($attribute)) {
+        # Extract attribute value first
+        my $attr_val = _extract_attr($item, $attribute);
+        # Check if the test name exists and call it with attr_val + args
+        my $test_fn = "func_$test_name";
+        if (can_call_test($test_fn)) {
+            return $test_fn->($attr_val, @$args);
+        } elsif ($test_name eq 'defined') {
+            return defined($attr_val) && !ref($attr_val) ? 1 : 0;
+        } else {
+            return defined($attr_val) ? 1 : 0;
+        }
+    } else {
+        # Test applied to the item directly
+        my $test_fn = "func_$test_name";
+        if (can_call_test($test_fn)) {
+            return $test_fn->($item, @$args);
+        } elsif ($test_name eq 'defined') {
+            return defined($item) ? 1 : 0;
+        } else {
+            return defined($item) ? 1 : 0;
+        }
+    }
+}
+
+# Helper: check if a subroutine can be called (exists and is coderef)
+sub can_call_test {
+    my ($name) = @_;
+    return defined(\&{$name}) && ref(\&{$name}) eq 'CODE';
+}
+
+# selectattr — filter array items by attribute value/test predicate
+# Usage: {{ items | selectattr('active') }} - items where active is truthy
+#        {{ items | selectattr('score', '==', 5) }} - items where score == 5
+sub filter_selectattr {
+    my ($val, $attribute, $test_name, @rest_args) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val) {
+        next unless defined($item);
+
+        my $matched = 0;
+
+        if (!defined($test_name)) {
+            # Simple truthiness check on the attribute
+            if (defined($attribute)) {
+                my $attr_val = _extract_attr($item, $attribute);
+                $matched = test_predicate_to_bool($attr_val);
+            } else {
+                $matched = test_predicate_to_bool($item);
+            }
+        } else {
+            # Test predicate with optional arguments
+            my @args = @rest_args;
+
+            # Handle string comparison operators as tests (like 'eq', '==', '>', etc.)
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
+                my $op_map = {
+                    'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    '<' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    '>' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                    '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                };
+
+                if (defined($op_map->{$test_name})) {
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+                    if (@cmp_args) {
+                        $matched = ($attribute) ? $op->(_extract_attr($item, $attribute), $cmp_args[0]) : $op->($item, $cmp_args[0]);
+                    } else {
+                        # No comparison value provided — skip this item
+                        next;
+                    }
+                } else {
+                    $matched = _evaluate_select_pred($item, $attribute, $test_name, \@args);
+                }
+            } else {
+                $matched = _evaluate_select_pred($item, $attribute, $test_name, \@args);
+            }
+        }
+
+        if ($matched) {
+            push @result, defined($attribute) ? _extract_attr($item, $attribute) : $item;
+        }
+    }
+
+    return \@result;
+}
+
+# rejectattr — filter out array items by attribute value/test predicate (inverse of selectattr)
+# Usage: {{ items | rejectattr('active') }} - items where active is falsy
+sub filter_rejectattr {
+    my ($val, $attribute, $test_name, @rest_args) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val) {
+        next unless defined($item);
+
+        my $matched = 0;
+
+        if (!defined($test_name)) {
+            # Simple truthiness check on the attribute
+            if (defined($attribute)) {
+                my $attr_val = _extract_attr($item, $attribute);
+                $matched = test_predicate_to_bool($attr_val);
+            } else {
+                $matched = test_predicate_to_bool($item);
+            }
+        } else {
+            # Test predicate with optional arguments
+            my @args = @rest_args;
+
+            # Handle string comparison operators as tests (like 'eq', '==', '>', etc.)
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
+                my $op_map = {
+                    'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    '<' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    '>' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                    '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                };
+
+                if (defined($op_map->{$test_name})) {
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+                    if (@cmp_args) {
+                        $matched = ($attribute) ? $op->(_extract_attr($item, $attribute), $cmp_args[0]) : $op->($item, $cmp_args[0]);
+                    } else {
+                        next;
+                    }
+                } else {
+                    $matched = _evaluate_select_pred($item, $attribute, $test_name, \@args);
+                }
+            } else {
+                $matched = _evaluate_select_pred($item, $attribute, $test_name, \@args);
+            }
+        }
+
+        # Reject items that matched the predicate
+        unless ($matched) {
+            push @result, defined($attribute) ? _extract_attr($item, $attribute) : $item;
+        }
+    }
+
+    return \@result;
+}
+
+# select — filter array items by test predicate (no attribute access)
+# Usage: {{ items | select('odd') }} - odd numbers only
+#        {{ items | select('equalto', 5) }} - items equal to 5
+sub filter_select {
+    my ($val, $test_name, @rest_args) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val) {
+        next unless defined($item);
+
+        my $matched = 0;
+
+        if (!defined($test_name)) {
+            # Simple truthiness check on the item
+            $matched = test_predicate_to_bool($item);
+        } else {
+            my @args = @rest_args;
+
+            # Handle string comparison operators as tests
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
+                my $op_map = {
+                    'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    '<' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    '>' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                    '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                };
+
+                if (defined($op_map->{$test_name})) {
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+                    if (@cmp_args) {
+                        $matched = $op->($item, $cmp_args[0]);
+                    } else {
+                        next;
+                    }
+                } else {
+                    # Use registered test function
+                    my $test_fn = "func_$test_name";
+                    if (can_call_test($test_fn)) {
+                        $matched = $test_fn->($item, @args);
+                    } elsif ($test_name eq 'defined') {
+                        $matched = defined($item) ? 1 : 0;
+                    } else {
+                        $matched = test_predicate_to_bool($item);
+                    }
+                }
+            } else {
+                # Use registered test function (is_string, is_odd, etc.)
+                my $test_fn = "func_$test_name";
+                if (can_call_test($test_fn)) {
+                    $matched = $test_fn->($item, @args);
+                } elsif ($test_name eq 'defined') {
+                    $matched = defined($item) ? 1 : 0;
+                } else {
+                    $matched = test_predicate_to_bool($item);
+                }
+            }
+        }
+
+        if ($matched) {
+            push @result, $item;
+        }
+    }
+
+    return \@result;
+}
+
+# reject — filter out array items by test predicate (inverse of select)
+# Usage: {{ items | reject('odd') }} - even numbers only
+sub filter_reject {
+    my ($val, $test_name, @rest_args) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val) {
+        next unless defined($item);
+
+        my $matched = 0;
+
+        if (!defined($test_name)) {
+            # Simple truthiness check on the item
+            $matched = test_predicate_to_bool($item);
+        } else {
+            my @args = @rest_args;
+
+            # Handle string comparison operators as tests
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
+                my $op_map = {
+                    'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+                    'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+                    'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    '<' => sub { "$_[0]" < $_[1] ? 1 : 0 },
+                    'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+                    'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    '>' => sub { "$_[0]" > $_[1] ? 1 : 0 },
+                    'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                    '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+                };
+
+                if (defined($op_map->{$test_name})) {
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+                    if (@cmp_args) {
+                        $matched = $op->($item, $cmp_args[0]);
+                    } else {
+                        next;
+                    }
+                } else {
+                    # Use registered test function
+                    my $test_fn = "func_$test_name";
+                    if (can_call_test($test_fn)) {
+                        $matched = $test_fn->($item, @args);
+                    } elsif ($test_name eq 'defined') {
+                        $matched = defined($item) ? 1 : 0;
+                    } else {
+                        $matched = test_predicate_to_bool($item);
+                    }
+                }
+            } else {
+                # Use registered test function (is_string, is_odd, etc.)
+                my $test_fn = "func_$test_name";
+                if (can_call_test($test_fn)) {
+                    $matched = $test_fn->($item, @args);
+                } elsif ($test_name eq 'defined') {
+                    $matched = defined($item) ? 1 : 0;
+                } else {
+                    $matched = test_predicate_to_bool($item);
+                }
+            }
+        }
+
+        # Reject items that matched the predicate
+        unless ($matched) {
+            push @result, $item;
+        }
+    }
+
+    return \@result;
+}
+
+# --- Object Filters ---
+
+# get — safe hash access with default fallback (like Python's dict.get())
+sub filter_get {
+    my ($obj, $key, $default) = @_;
+    return $default unless defined($obj) && ref($obj) eq 'HASH';
+    if (!exists($obj->{$key})) {
+        return defined($default) ? $default : undef;
+    }
+    return $obj->{$key};
+}
+
+# keys — return sorted array of hash keys as an arrayref
+sub filter_keys {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'HASH';
+    [sort {$a cmp $b} keys %{$val}];
+}
+
+# values — return array of hash values as an arrayref (in sorted key order)
+sub filter_values {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'HASH';
+    my @sorted = sort {$a cmp $b} keys %{$val};
+    [@{$val}{@sorted}];
+}
+
+# dictsort — sort dictionary by key or value into a new array of [key, value] pairs
+# Usage: {{ my_dict | dictsort }}  (default: sort by key, case-sensitive)
+#        {{ my_dict | dictsort:true }}  (case-insensitive comparison)
+#        {{ my_dict | dictsort:value }}  (sort by value instead of key)
+sub filter_dictsort {
+    my ($val, $by_value, $reverse) = @_;
+
+    # Handle optional boolean arguments that might be passed as strings "true"/"false"
+    my $by_val = 0;
+    if (defined($by_value)) {
+        if (ref($by_value) eq 'SCALAR' || !ref($by_value)) {
+            my $s = "$by_value";
+            $by_val = ($s eq 'true') ? 1 : (($s eq 'false') ? 0 : 0);
+        } elsif (ref($by_value) eq 'ARRAY') {
+            $by_val = scalar(@$by_value) > 0 ? 1 : 0;
+        } else {
+            $by_val = $by_value ? 1 : 0;
+        }
+    }
+
+    my $rev = defined($reverse) ? ($reverse ? 1 : 0) : 0;
+
+    return [] unless defined($val) && ref($val) eq 'HASH';
+
+    my %hash = %{$val};
+    my @pairs;
+
+    if ($by_val) {
+        # Sort by value
+        @pairs = sort {
+            my $va = "$a"; my $vb = "$b";
+            my $cmp = $va cmp $vb;
+            $rev ? -$cmp : $cmp;
+        } keys %hash;
+        @pairs = map { [$_, $hash{$_}] } @pairs;
+    } else {
+        # Sort by key (default)
+        @pairs = sort {
+            my ($ka, $kb) = ($a, $b);
+            my $cmp = $ka cmp $kb;
+            $rev ? -$cmp : $cmp;
+        } keys %hash;
+        @pairs = map { [$_, $hash{$_}] } @pairs;
+    }
+
+    return \@pairs;
+}
+
+# --- Phase 7: Global Functions ---
+
+# raise_exception — throw a Jinja exception from templates (dies with message)
+# Usage in template: {{ raise_exception('error message') }}
+# The die() is caught by XS layer and propagated as rendering error.
+sub func_raise_exception {
+    my ($msg) = @_;
+    $msg //= 'Unknown error';
+    die "$msg";
+}
+
+# range — Python-style range generating arrayref [start..stop) with optional step
+# Usage: {{ range(5) }} → [0, 1, 2, 3, 4]
+#        {{ range(2, 8) }} → [2, 3, 4, 5, 6, 7]
+#        {{ range(1, 10, 2) }} → [1, 3, 5, 7, 9]
+sub func_range {
+    my ($start, $stop, $step) = @_;
+
+    if (!defined($step)) {
+        # Two-arg form: range(stop) → [0..stop) or range(start, stop)
+        if (!defined($stop)) {
+            # Single arg: range(stop) — start=0
+            $stop = $start;
+            $start = 0;
+        } else {
+            # Two args: range(start, stop)
+            # nothing to do
+        }
+        $step = 1;
+    }
+
+    return [] unless defined($start) && defined($stop) && defined($step);
+
+    my @result;
+    if ($step > 0) {
+        push @result, $_ for ($start .. $stop - 1);
+    } elsif ($step < 0) {
+        push @result, $_ for reverse ($stop + 1 .. $start);
+    }
+
+    return \@result;
+}
+
+# strftime_now — format current time as string using POSIX::strftime
+# Usage: {{ strftime_now('%Y-%m-%d %H:%M:%S') }} → "2024-01-15 14:30:00"
+sub filter_strftime_now {
+    my ($fmt) = @_;
+    $fmt //= '%Y-%m-%d %H:%M:%S';
+
+    # Format current local time
+    my @t = localtime();
+    strftime($fmt, @t);
+}
+
+# namespace — create a mutable object from kwargs (like Jinja's namespace())
+# Usage in template: {% set ns = namespace() %} or {% set ns = namespace(foo='bar', baz=1) %}
+# Returns a blessed hashref that can be used with {% set ns.key = value %} syntax.
+sub func_namespace {
+    my (%kwargs) = @_;
+
+    # Create a blessed hashref to act as a mutable namespace object
+    my $ns = bless({}, 'Minijinja::Namespace');
+
+    # Initialize with any provided keyword arguments
+    for my $key (keys %kwargs) {
+        $ns->{$key} = $kwargs{$key};
+    }
+
+    return $ns;
+}
+
+# Namespace package — provides accessor methods for the blessed namespace objects.
+# This allows templates to access and modify namespace attributes.
+
+package Minijinja::Namespace;
+
+use strict; use warnings;
+
+# Allow access to any key via hash dereferencing (handled by XS layer)
+# The XS layer will call this when accessing ns.key in templates
 
 1;

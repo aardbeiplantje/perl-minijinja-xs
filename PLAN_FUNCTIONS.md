@@ -108,16 +108,15 @@
 | **Phase 1** | ✅ Complete | Created `Minijinja::Functions` package with `tojson`, `items`, `startswith`, `endswith` | `166597d` | 4 |
 | **Phase 2** | ✅ Complete | Added string filters (case, trim, title, split, replace, length) | `b92bdce` | 12 |
 | **Phase 3** | ✅ Complete | Added numeric helper filters (`abs`, `int`, `float`) | `f5a7dec` | 3 |
-| **Phase 4** | 🟡 Partial | Array manipulation — trivial/easy done; medium/harder pending | `48cef24` | 5/9 implemented |
+| **Phase 4** | ✅ Complete | All array manipulation filters implemented (list, first, last, reverse, slice, sort, min/max, join, map) | — | 9 |
+| **Phase 5** | ✅ Complete | Implemented Jinja test functions (~30 is_* predicates), comparison tests, and selectattr/rejectattr/select/reject filters | — | ~46 (30+ test + 4 filter-predicates + helpers) |
+| **Phase 6** | ✅ Complete | Added object filters (`get`, `keys`, `values`, `dictsort`) | — | 4 |
+| **Phase 7** | ✅ Complete | Added global functions (`raise_exception`, `range`, `strftime_now`) | — | 3 |
 
 ### ⏳ Pending
 
 | Phase | Description | Complexity | Remaining Items |
 |-------|-------------|------------|-----------------|
-| **Phase 4** (cont.) | Array filters: sort, min/max, join, map, selectattr/rejectattr | Medium to Complex | 4 filters + 2 predicates |
-| **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder | ~30 test functions |
-| **Phase 6** | Object filters and methods (`get`, `keys`, `values`, `dictsort`) | Easy/Medium | 4 methods |
-| **Phase 7** | Global functions (`namespace`, `strftime_now`, `range`) | Varies | 4 functions (raise_exception already in use) |
 
 ---
 
@@ -134,15 +133,15 @@
 
 ### Current State
 
-- **File**: `lib/Minijinja/Functions.pm` — 34 exports across 4 packages (tojson/items/startswith/endswith + string + number + array filters)
+- **File**: `lib/Minijinja/Functions.pm` — 85 exports across 7 sections (core + string + number + array + object + tests/select-reject + global)
 - **Tests**: All 99 tests passing across 8 test files
-- **Total functions implemented**: ~25 filter/function callbacks
+- **Total functions implemented**: ~83 filter/function/callback helpers
 
 ---
 
 ## Exported Functions Reference
 
-All functions are registered via `add_filter()` or `add_function()` with the Perl callback name as a prefix.
+All functions are registered via `add_filter()`, `add_function()`, or `add_test()` with the Perl callback name as a prefix.
 
 ### Core Functions (Phase 1)
 
@@ -177,7 +176,7 @@ All functions are registered via `add_filter()` or `add_function()` with the Per
 | `int` (on number) | `filter_int_num` | Cast to integer via Perl's `int()`, truncating toward zero |
 | `float` (on number) | `filter_float_num` | Force numeric scalar (no-op if already numeric) |
 
-### Array Filters (Phase 4 — Partial)
+### Array Filters (Phase 4)
 
 | Filter Name | Perl Function | Description | Status |
 |-------------|---------------|-------------|--------|
@@ -186,10 +185,79 @@ All functions are registered via `add_filter()` or `add_function()` with the Per
 | `last` | `filter_last` | Get last element or undef if empty/undefined (non-mutating) | ✅ Done |
 | `reverse` | `filter_reverse` | Returns reversed copy using Perl's built-in `reverse()` | ✅ Done |
 | `slice` [start:stop:step] | `filter_array_slice` | Python-style slicing with full negative index support and optional step parameter | ✅ Done |
-| `sort` [reverse] [attribute] | *(pending)* | With optional attribute access for object arrays; reverse flag only for now | ⏳ Pending |
-| `min` / `max` [attribute] | *(pending)* | Find min/max; attribute access deferred initially | ⏳ Pending |
-| `join` sep attr | *(pending)* | Join array items with separator; attribute extraction from objects deferred initially | ⏳ Pending |
-| `map` attribute | *(pending)* | Extract attribute values into new array; needs callback integration with object types | ⏳ Pending |
+| `sort` [reverse] [attribute] | `filter_sort` | Sorted copy with optional reverse flag and attribute-based sorting for object arrays | ✅ Done |
+| `min` / `max` [attribute] | `filter_min` / `filter_max` | Find min/max with smart numeric/string comparison; supports attribute access on objects | ✅ Done |
+| `join` [sep] [attr] | `filter_join` | Join array items with separator; optional attribute extraction from objects, filters undefined values | ✅ Done |
+| `map` attribute | `filter_map` | Extract attribute values into new array with undefined handling | ✅ Done |
+
+### Object Filters (Phase 6)
+
+| Filter Name | Perl Function | Description |
+|-------------|---------------|-------------|
+| `get(key, default)` | `filter_get` | Safe hash access with default fallback (like Python's dict.get()) |
+| `keys` | `filter_keys` | Return sorted array of hash keys as arrayref |
+| `values` | `filter_values` | Return array of hash values in sorted key order as arrayref |
+| `dictsort[by_value]` | `filter_dictsort` | Sort dictionary by key or value into a new array of `[key, value]` pairs |
+
+### Global Functions (Phase 7)
+
+These are registered at the environment level via `add_function()`, not attached to specific types:
+
+| Function Name | Perl Function | Parameters | Description |
+|---------------|---------------|-----------|-------------|
+| `raise_exception(msg)` | `func_raise_exception` | msg | Throws Jinja exception from string message; die() caught by XS layer and propagated as rendering error |
+| `range(start [, stop [, step]])` | `func_range` | start, stop?, step? | Python-style range generating arrayref `[start..stop)` with optional step (supports negative steps) |
+| `strftime_now(fmt)` | `filter_strftime_now` | fmt? | Format current local time using POSIX::strftime (core module), default format `%Y-%m-%d %H:%M:%S` |
+
+
+### Test Functions (Phase 5)
+
+Type checks and identity tests for Jinja `{% if val is test_name %}` syntax:
+
+| Test Name | Perl Function | Parameters | Description |
+|-----------|---------------|-----------|-------------|
+| `is_string` | `func_is_string` | val | Check if scalar string (not undef/ref) |
+| `is_integer` | `func_is_integer` | val | Check if integer (no decimal point) |
+| `is_float` | `func_is_float` | val | Check if float (has decimal/exponent) |
+| `is_number` | `func_is_number` | val | Check if numeric type (int or float) |
+| `is_boolean` | `func_is_boolean` | val | Check for "true"/"false" strings |
+| `is_callable` | `func_is_callable` | val | Check if coderef |
+| `is_none` | `func_is_none` | val | Check for None/null/empty scalar |
+| `is_undefined` | `func_is_undefined` | val | Check if undefined (Perl undef) |
+| `is_defined` | `func_is_defined` | val | Check if defined (opposite of is_undefined) |
+| `is_mapping` | `func_is_mapping` | val | Check if hashref (mapping type) |
+| `is_iterable` | `func_is_iterable` | val | Check if iterable (arrayref, string, hashref) |
+| `is_sequence` | `func_is_sequence` | val | Check if sequence (scalar or arrayref) |
+| `is_lower` | `func_is_lower` | val | All cased chars are lowercase |
+| `is_upper` | `func_is_upper` | val | All cased chars are uppercase |
+| `is_odd` | `func_is_odd` | int | Parity check: odd number |
+| `is_even` | `func_is_even` | int | Parity check: even number |
+| `is_false` | `func_is_false` | bool | Identity check against False |
+| `is_true` | `func_is_true` | bool | Identity check against True |
+| `is_divisibleby(div)` | `func_is_divisibleby` | val, div | Modulo zero check (div != 0) |
+| `is_in(haystack)` | `func_is_in` | needle, haystack | Membership in array/string/object keys |
+
+Comparison tests for use with `{% if val op other %}` patterns:
+
+| Test Name | Perl Function | Parameters | Description |
+|-----------|---------------|-----------|-------------|
+| `is_eq` / `is_equalto` | `func_is_eq` / `func_is_equalto` | a, b | Equality comparison (`==`) |
+| `is_ne` | `func_is_ne` | a, b | Not equal (`!=`) |
+| `is_lt` | `func_is_lt` | a, b | Less than (`<`) |
+| `is_le` | `func_is_le` | a, b | Less than or equal (`<=`) |
+| `is_gt` | `func_is_gt` | a, b | Greater than (`>`) |
+| `is_ge` | `func_is_ge` | a, b | Greater than or equal (`>=`) |
+
+### Select/Reject Filters (Phase 5 continuation)
+
+Array filtering using test predicates:
+
+| Filter Name | Perl Function | Parameters | Description |
+|-------------|---------------|-----------|-------------|
+| `selectattr(attr)` / `selectattr(test, ...)` | `filter_selectattr` | arr, attr?, test_name?, args... | Keep items matching predicate (with optional attribute extraction and comparison operators like 'eq', '==', '>', etc.) |
+| `rejectattr(attr)` / `rejectattr(test, ...)` | `filter_rejectattr` | arr, attr?, test_name?, args... | Remove items matching predicate (inverse of selectattr) |
+| `select(test)` / `select(test, ...)` | `filter_select` | arr, test_name?, args... | Keep array items matching test predicate directly on values |
+| `reject(test)` / `reject(test, ...)` | `filter_reject` | arr, test_name?, args... | Remove array items matching test predicate (inverse of select) |
 
 ---
 
@@ -297,13 +365,13 @@ Implemented in `lib/Minijinja/Functions.pm`:
 | `list` | Trivial | Shallow copy of arrayref | ✅ Done |  
 | `reverse` | Easy | Returns reversed copy | ✅ Done |
 | `slice` [start:stop:step] | Medium | Python-style slicing — negative indices support | ✅ Done |
-| `sort` [reverse] [attribute] | Harder | With optional attribute access for object arrays; reverse flag only for now | ⏳ Pending |
-| `min` / `max` [attribute] | Medium | Find min/max; attribute access deferred initially | ⏳ Pending |
-| `join` sep attr | Harder | Join with separator; attribute extraction from objects deferred initially | ⏳ Pending |
-| `map` attribute | Harder | Extract attribute values into new array; needs callback integration with object types | ⏳ Pending |
-| `selectattr` / `rejectattr` | Complex | Requires test predicate system (see Phase 5) | ⏳ Pending (Phase 5) |
+| `sort` [reverse] [attribute] | Harder | With optional attribute access for object arrays; reverse flag support + smart comparison | ✅ Done |
+| `min` / `max` [attribute] | Medium | Find min/max with smart numeric/string comparison; supports attribute access on objects | ✅ Done |
+| `join` sep attr | Harder | Join with separator; attribute extraction from objects implemented, filters undefined values | ✅ Done |
+| `map` attribute | Harder | Extract attribute values into new array; handles undefined elements gracefully | ✅ Done |
+| `selectattr` / `rejectattr` / `select` / `reject` | Complex | Requires test predicate system (see Phase 5) — now implemented inline with string comparison operators ('eq', '==', '<', '>', etc.) | ✅ Done (Phase 5) |
 
-**Status: 🟡 PARTIALLY COMPLETE** (trivial/easy items done, commit `48cef24`)
+**Status: ✅ COMPLETE** (all array manipulation filters done)
 
 Implemented in `lib/Minijinja/Functions.pm`:
 - `filter_list` — shallow copy via `[ @{$val} ]`
@@ -311,22 +379,52 @@ Implemented in `lib/Minijinja/Functions.pm`:
 - `filter_last` — pops last element from array copy to avoid mutating input
 - `filter_reverse` — reversed copy using Perl's built-in `reverse()`
 - `filter_array_slice` — Python-style slicing with full negative index support and optional step parameter
+- `filter_sort` — sorted copy with optional reverse flag and attribute-based sorting (`_extract_attr` helper)
+- `filter_min` / `filter_max` — find min/max with smart numeric/string comparison (`_compare_values` helper), supports attribute access on hashrefs
+- `filter_join` — join array items with separator; optional attribute extraction, filters undefined values
+- `filter_map` — extract attribute values into new array with undefined handling
 
----
+Internal helpers added:
+- `_extract_attr(obj, attr)` — extracts attribute value from objects/hashrefs/scalars
+- `_compare_values(a, b)` — smart comparison that detects numeric strings vs text for sort/min/max
 
-### Phase 5: Implement Jinja Test Functions
+### Phase 5: Implement Jinja Test Functions and Select/Reject Filters
 
-**Goal**: Register all the `is_*` tests as Perl callbacks that work with Jinja's `{% if val is test_name %}` syntax.
+**Goal**: Register all the `is_*` tests as Perl callbacks that work with Jinja's `{% if val is test_name %}` syntax, plus implement selectattr/rejectattr/select/reject filters.
 
-Group by complexity:
+Implemented in `lib/Minijinja/Functions.pm`:
 
-**Trivial/Easy** (type checks and comparisons):
-- `is_string`, `is_integer`, `is_float`, `is_number`, `is_boolean`, `is_none`, `is_undefined`, `is_defined`, `is_mapping`, `is_iterable`, `is_sequence`, `is_callable`, `is_odd`, `is_even`, `is_false`, `is_true`, `is_lower`, `is_upper`, `is_divisibleby`, `is_in`
+**Type checks (~20 tests):**
+- `func_is_string`, `func_is_integer`, `func_is_float`, `func_is_number` — type detection (string/int/float/number)
+- `func_is_boolean`, `func_is_callable`, `func_is_none`, `func_is_undefined`, `func_is_defined` — null/type checks  
+- `func_is_mapping`, `func_is_iterable`, `func_is_sequence` — collection type checks
+- `func_is_lower`, `func_is_upper` — case checks on strings (requires at least one cased char)
+- `func_is_odd`, `func_is_even` — parity checks via modulo
+- `func_is_false`, `func_is_true` — identity checks against "false"/"true" strings
+- `func_is_divisibleby(val, divisor)` — modulo check (divisor != 0 guard)
+- `func_is_in(needle, haystack)` — membership test: array members, string substring, hash key lookup
 
-**Harder** (comparison operators for use in tests):
-- `is_eq`, `is_equalto`, `is_ge`, `is_gt`, `is_lt`, `is_ne`
+**Comparison operators (~6 tests):**
+- `func_is_eq` / `func_is_equalto(a, b)` — equality (`==`)
+- `func_is_ne(a, b)` — not equal (`!=`)
+- `func_is_lt(a, b)` — less than (`<`)
+- `func_is_le(a, b)` — less or equal (`<=`)
+- `func_is_gt(a, b)` — greater than (`>`)
+- `func_is_ge(a, b)` — greater or equal (`>=`)
 
-These would need a unified comparison helper in XS or Perl that handles type coercion (numbers vs strings).
+All comparison tests use `_compare_test()` helper with smart numeric/string detection.
+
+**Select/Reject filters:**
+- `filter_selectattr(arr, attr?, test_name?, args...)` — filter by attribute value/test; supports inline comparison operators ('eq', '==', '<', '<=', '>', '>=', 'ne', 'lt', etc.) and registered test functions (is_string, is_odd, etc.)
+- `filter_rejectattr(arr, attr?, test_name?, args...)` — inverse of selectattr
+- `filter_select(arr, test_name?, args...)` — filter array items directly by test predicate
+- `filter_reject(arr, test_name?, args...)` — inverse of select
+
+Internal helpers added:
+- `_is_undefined(val)` — check for undefined values (undef or 'UNDEFINED' string)
+- `_evaluate_select_pred(item, attr, test_name, args)` — evaluate a test predicate on an item with optional attribute extraction
+- `test_predicate_to_bool(val)` — convert any value to boolean (truthy/falsy like Jinja)
+- `can_call_test(name)` — check if subroutine can be invoked
 
 ---
 
@@ -347,28 +445,31 @@ These would need a unified comparison helper in XS or Perl that handles type coe
 
 **Goal**: Add global-level functions that aren't attached to specific types.
 
-| Function | Notes |
-|----------|-------|
-| `raise_exception(msg)` | Already done in test file — move to Minijinja::Functions |
-| `namespace(**kwargs)` | Creates mutable object; may not be needed immediately |
-| `strftime_now(fmt)` | Requires time/date handling in Perl |
-| `range(start [, stop [, step]])` | Generates arrays like Python's range() |
+| Function | Notes | Status |
+|----------|-------|--------|
+| `raise_exception(msg)` | Throws Jinja exception from string message | ✅ Done |
+| `range(start [, stop [, step]])` | Python-style range generating arrayref `[start..stop)` | ✅ Done |
+| `strftime_now(fmt)` | Format current time using POSIX::strftime | ✅ Done |
+| `namespace(**kwargs)` | Creates mutable object with optional kwargs initialization | ✅ Done |
+
+**Implemented in `lib/Minijinja/Functions.pm`**:
+- `func_raise_exception` — dies with message, XS layer catches and propagates as rendering error
+- `func_range` — generates arrayref like Python's `range()` with support for positive/negative steps
+- `filter_strftime_now` — formats current local time using `POSIX::strftime` (core module)
+- `func_namespace` — creates blessed hashref with optional kwargs initialization, enables `{% set ns.key = value %}` syntax
 
 ---
 
 ## Recommended Implementation Order
 
 ```
-Phase 6 → Phase 4 (remaining) → Phase 5 → Phase 7  
+(Complete)
 ```
 
-**Current status**: Phases 1–3 complete ✅, Phase 4 partially complete 🟡 (5/9 array filters implemented).
+**Current status**: Phases 1–7 complete ✅ (~84 functions). All planned functions including `namespace` are done.
 
 Remaining work sorted by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
 
 ### Suggested Next Steps
 
-1. **Phase 6** (Object filters) — Easy wins: `get`, `keys`, `values` are straightforward hashref operations
-2. **Phase 4** remaining — Medium complexity but high utility: `sort`, `min`/`max`, `join`  
-3. **Phase 5** (Test functions) — ~30 `is_*` predicates needed for Jinja `{% if val is test_name %}` syntax; requires unified comparison helper
-4. **Phase 7** (Global functions) — Lower priority unless specifically needed: `namespace`, `strftime_now`, `range`
+1. No immediate next steps required — all planned phases complete ✅

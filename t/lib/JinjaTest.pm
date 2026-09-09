@@ -6,6 +6,7 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
+use Minijinja::Functions qw(func_raise_exception);
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
 use JSON::PP ();
@@ -91,7 +92,9 @@ sub jinja_render {
     });
 
     # Register raise_exception as a regular function that dies to abort rendering
-    add_function($env, 'raise_exception', sub { die $_[0] });
+    add_function($env, 'raise_exception', \&func_raise_exception);
+
+    # Note: namespace() is already available as a builtin in minijinja (see defaults.rs)
 
     # Apply per-test callbacks on top of defaults (custom names shadow defaults)
     if ($opts && ref($opts) eq 'HASH') {

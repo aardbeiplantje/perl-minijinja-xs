@@ -14,6 +14,8 @@ engine). Two interfaces work together:
   to minijinja CABI
 - **Perl wrapper** (`Minijinja.pm`) — Exporter setup + convenience `new(%opts)`
   wrapper, loads XS via XSLoader
+- ./minijinja contains this source code and is not to be touched, it is to be
+  used as-is
 
 ## Key Files
 

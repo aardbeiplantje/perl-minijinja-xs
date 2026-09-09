@@ -6,7 +6,7 @@ use lib 't/lib';
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
 use JSON::PP ();
-use Minijinja::Functions qw(filter_tojson filter_items func_startswith func_endswith filter_upper filter_lower filter_strip filter_rstrip filter_lstrip filter_title filter_capitalize filter_split filter_rsplit filter_replace filter_length_str);
+use Minijinja::Functions qw(filter_tojson filter_items func_startswith func_endswith filter_upper filter_lower filter_strip filter_rstrip filter_lstrip filter_title filter_capitalize filter_split filter_rsplit filter_replace filter_length_str func_raise_exception);
 
 # Resolve resource dir — check multiple locations for robustness under make test vs direct execution
 my $resources_dir;
@@ -53,7 +53,7 @@ add_test($env, 'istartswith', sub { func_startswith(@_) });
 add_test($env, 'endswith', sub { func_endswith(@_) });
 
 # raise_exception — dies so rendering aborts and error_detail() returns the message
-add_function($env, 'raise_exception', sub { die $_[0] });
+add_function($env, 'raise_exception', \&func_raise_exception);
 
 # items — Perl equivalent of Python safe_items (myjinja.py lines 6-17)
 add_filter($env, 'items', \&filter_items);
