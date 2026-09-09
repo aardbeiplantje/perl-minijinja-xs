@@ -6,7 +6,7 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
-use Minijinja::Functions qw(func_raise_exception func_startswith func_endswith);
+use Minijinja qw(func_raise_exception func_startswith func_endswith);
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
 use File::Basename;
 use JSON::PP ();
