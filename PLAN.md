@@ -581,3 +581,30 @@ PERL5LIB=blib/lib perl -I blib/arch t/03-integration.t
 | Build verification & iteration | ~1-2h | Expected compile iterations; fixing those iteratively. |
 
 Total estimated effort: **7-10 hours** of focused work.
+
+---
+
+## Functions Summary (replaces PLAN_FUNCTIONS.md)
+
+`lib/Minijinja/Functions.pm` — ~85 exported subs across 7 categories. All registered via `add_filter()`, `add_function()`, or `add_test()` in Perl callbacks (not XSUBs). See `lib/Minijinja/Functions.pm` for full source.
+
+### What's implemented (all complete ✅)
+
+| Category | Count | Examples |
+|----------|-------|---------|
+| Core helpers | 4 | `tojson`, `items`, `startswith`, `endswith` |
+| String filters | 12 | `upper`, `lower`, `strip`/`rstrip`/`lstrip`, `title`, `capitalize`, `split`/`rsplit`, `replace`, `length_str` |
+| Number filters | 3 | `abs`, `int`, `float` |
+| Array filters | 9 | `list`, `first`, `last`, `reverse`, `slice`, `sort`, `min/max`, `join`, `map` |
+| Object filters | 4 | `get`, `keys`, `values`, `dictsort` |
+| Test functions | ~30 | Type checks (`is_string`, `is_integer`, ...), comparison ops (`eq/ne/lt/le/gt/ge`), membership (`is_in`) |
+| Select/reject filters | 4 | `selectattr`, `rejectattr`, `select`, `reject` |
+| Global functions | 4 | `raise_exception`, `range`, `strftime_now`, `namespace` |
+
+### Key architectural note
+
+These Perl callbacks **shadow** minijinja's native builtins when registered (e.g., calling `add_filter($env, 'upper', \&filter_upper)` overwrites the native Rust implementation). The only auto-registered functions in test harnesses that don't exist in Rust are: `has_prefix`, `has_suffix`, and `raise_exception`. Everything else should be left to the native implementations or explicitly registered per-test.
+
+### Not implemented (minimal gap)
+
+~21 Rust builtins not covered (mostly advanced features): `safe/escape`, `default`, `round`, `batch/slice`(Jinja-style), `sum/indent/string/bool/unique/chain/zip/groupby/pprint/format/urlencode`. These are rarely needed in typical template usage.
