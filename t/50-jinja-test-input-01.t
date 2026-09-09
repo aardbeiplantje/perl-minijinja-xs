@@ -3,7 +3,14 @@ use Test::More tests => 1;
 
 use lib 't/lib';
 
-use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test filter_tojson filter_items func_startswith func_endswith filter_upper filter_lower filter_strip filter_rstrip filter_lstrip filter_title filter_capitalize filter_split filter_rsplit filter_replace filter_length_str func_raise_exception);
+use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
+
+# Fully-qualified namespaced references for clarity:
+my $fn_startswith  = \&Minijinja::Function::_startswith_impl;
+my $fn_endswith    = \&Minijinja::Function::_endswith_impl;
+my $filter_tojson  = \&Minijinja::Filter::tojson;
+my $filter_items   = \&Minijinja::Filter::items;
+
 use File::Basename;
 use JSON::PP ();
 
@@ -42,23 +49,23 @@ my $context = JSON::PP->new->utf8->decode($json_str);
 my $env = new();
 
 # startswith — identical lambda semantics to llama.cpp jinja parser
-add_function($env, 'startswith', \&func_startswith);
+add_function($env, 'startswith', $fn_startswith);
 
 # endswith — identical lambda semantics to llama.cpp jinja parser
-add_function($env, 'endswith', \&func_endswith);
+add_function($env, 'endswith', $fn_endswith);
 
 # Also register as Jinja tests so they work with `is` syntax (line 72 uses `is not mapping`)
-add_test($env, 'istartswith', sub { func_startswith(@_) });
-add_test($env, 'endswith', sub { func_endswith(@_) });
+add_test($env, 'istartswith', sub { $fn_startswith->(@_) });
+add_test($env, 'endswith', sub { $fn_endswith->(@_) });
 
 # raise_exception — dies so rendering aborts and error_detail() returns the message
-add_function($env, 'raise_exception', \&func_raise_exception);
+add_function($env, 'raise_exception', \&Minijinja::Function::raise_exception);
 
 # items — Perl equivalent of Python safe_items (myjinja.py lines 6-17)
-add_filter($env, 'items', \&filter_items);
+add_filter($env, 'items', $filter_items);
 
 # tojson filter — uses pre-created encoder + HTML escaping post-processing
-add_filter($env, 'tojson', \&filter_tojson);
+add_filter($env, 'tojson', $filter_tojson);
 
 # Render the template using input from input-01.json as context
 my $result = render_str($env, 'template-01.jinja', $template_source, $context);

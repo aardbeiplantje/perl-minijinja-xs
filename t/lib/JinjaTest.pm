@@ -6,8 +6,15 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
-use Minijinja qw(func_raise_exception func_startswith func_endswith filter_has_prefix filter_has_suffix);
 use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
+
+# Fully-qualified namespaced references for clarity and explicitness:
+my $fn_startswith  = \&Minijinja::Function::_startswith_impl;
+my $fn_endswith    = \&Minijinja::Function::_endswith_impl;
+my $filter_has_pfx = \&Minijinja::Filter::has_prefix;
+my $filter_has_sfx = \&Minijinja::Filter::has_suffix;
+my $raise_exn      = \&Minijinja::Function::raise_exception;
+
 use File::Basename;
 use JSON::PP ();
 
@@ -43,20 +50,20 @@ sub jinja_render {
     }
 
     # Register default helpers (always applied; can be overridden by per-test callbacks)
-    add_filter($env, 'has_prefix', \&filter_has_prefix);
-    add_filter($env, 'has_suffix', \&filter_has_suffix);
+    add_filter($env, 'has_prefix', $filter_has_pfx);
+    add_filter($env, 'has_suffix', $filter_has_sfx);
 
     # startswith/endswith as global functions — Rust only provides these as tests (is_startingwith/is_endingwith),
     # but templates need them callable as functions via .method() → function() patching below.
-    add_function($env, 'startswith', \&func_startswith);
-    add_function($env, 'endswith', \&func_endswith);
+    add_function($env, 'startswith', $fn_startswith);
+    add_function($env, 'endswith', $fn_endswith);
 
     # Also register as Jinja tests so they can be used with 'is' syntax
-    add_test($env, 'istartswith', sub { func_startswith(@_); });
-    add_test($env, 'endswith', sub { func_endswith(@_); });
+    add_test($env, 'istartswith', sub { $fn_startswith->(@_); });
+    add_test($env, 'endswith', sub { $fn_endswith->(@_); });
 
     # raise_exception as a regular function that dies to abort rendering
-    add_function($env, 'raise_exception', \&func_raise_exception);
+    add_function($env, 'raise_exception', $raise_exn);
 
     # Note: the following are already available as builtins in minijinja (loaded automatically via defaults.rs):
     #   - namespace: creates mutable objects for template scoping
