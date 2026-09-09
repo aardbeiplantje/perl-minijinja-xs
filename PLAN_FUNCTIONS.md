@@ -99,6 +99,27 @@
 
 ---
 
+## Implementation Status
+
+### ✅ Completed
+
+| Phase | Status | Description | Commit |
+|-------|--------|-------------|--------|
+| **Phase 1** | ✅ Complete | Created `Minijinja::Functions` package with `tojson`, `items`, `startswith`, `endswith` | `166597d` |
+| **Phase 2** | ✅ Complete | Added string filters: `upper`, `lower`, `strip`, `rstrip`, `lstrip`, `title`, `capitalize`, `split`, `rsplit`, `replace`, `length_str` | (current) |
+
+### ⏳ Pending
+
+| Phase | Description | Complexity |
+|-------|-------------|------------|
+| **Phase 3** | Number type-specific filters (`abs`, `int`, `float`) | Trivial/Easy |
+| **Phase 4** | Array filters (`first`, `last`, `list`, `slice`, `sort`, `reverse`, `min`, `max`, etc.) | Easy to Complex |
+| **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder |
+| **Phase 6** | Object filters and methods (`get`, `keys`, `values`, `dictsort`) | Easy/Medium |
+| **Phase 7** | Global functions (`namespace`, `strftime_now`, `range`) | Varies |
+
+---
+
 ## Implementation Plan
 
 ### Phase 1: Move `tojson`, `items`, `startswith`, `endswith` from tests into Minijinja.pm
@@ -141,6 +162,8 @@ sub func_endswith { ... }
 - Update `t/50-jinja-test-input-01.t` to import from `Minijinja::Functions` instead of defining inline.
 - The test will need `JSON` module or we can implement a minimal JSON serializer in Perl.
 
+**Status: ✅ COMPLETE** (commit `166597d`)
+
 ---
 
 ### Phase 2: Implement String Filters
@@ -157,6 +180,16 @@ sub func_endswith { ... }
 | `length` (string) | Trivial | Return scalar length |
 
 These would be added as new XSUB wrapper functions or registered via existing `add_filter()` API with Perl callback implementations in Minijinja.pm.
+
+**Status: ✅ COMPLETE** 
+
+Implemented in `lib/Minijinja/Functions.pm`:
+- `filter_upper`, `filter_lower` — case conversion
+- `filter_strip`, `filter_rstrip`, `filter_lstrip` — whitespace trimming (with optional chars arg)
+- `filter_title`, `filter_capitalize` — title case and first-letter capitalization  
+- `filter_split`, `filter_rsplit` — split by delimiter with optional maxsplit support
+- `filter_replace` — replace all occurrences using `\Q...\E` escaping
+- `filter_length_str` — character length
 
 ---
 
@@ -237,7 +270,7 @@ These would need a unified comparison helper in XS or Perl that handles type coe
 ## Recommended Implementation Order
 
 ```
-Phase 1 → Phase 2 → Phase 4 (trivial first) → Phase 3 → Phase 5 → Phase 6 → Phase 7
+Phase 3 → Phase 6 → Phase 4 (trivial first) → Phase 5 → Phase 7
 ```
 
-This orders by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
+**Note**: Phase 1 and Phase 2 are complete. Remaining phases ordered by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
