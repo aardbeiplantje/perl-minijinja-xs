@@ -18,6 +18,9 @@ our @EXPORT_OK = qw(
     filter_split filter_rsplit
     filter_replace
     filter_length_str
+
+    filter_abs
+    filter_int_num filter_float_num
 );
 
 # Pre-create shared JSON encoder instance for reuse in callbacks.
@@ -238,6 +241,30 @@ sub filter_length_str {
     my ($val) = @_;
     return 0 unless defined($val);
     length("$val");
+}
+
+# --- Number Filters ---
+
+# abs — absolute value (works on int or float, matches Python's abs())
+sub filter_abs {
+    my ($val) = @_;
+    return $val unless defined($val);
+    my $n = 0 + $val;  # force numeric context
+    $n < 0 ? -$n : $n;
+}
+
+# int (on float) — cast number to integer (truncates toward zero, like Python's int())
+sub filter_int_num {
+    my ($val) = @_;
+    return "" unless defined($val);
+    int(0 + $val);  # force numeric, then truncate to int
+}
+
+# float (on int) — convert to floating point (no-op if already float)
+sub filter_float_num {
+    my ($val) = @_;
+    return "" unless defined($val);
+    0 + $val;  # force numeric scalar (float)
 }
 
 1;
