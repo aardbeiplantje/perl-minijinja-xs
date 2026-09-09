@@ -21,6 +21,11 @@ our @EXPORT_OK = qw(
 
     filter_abs
     filter_int_num filter_float_num
+
+    filter_array_slice filter_first filter_last
+    filter_list filter_sort filter_reverse
+    filter_join filter_map
+    filter_min filter_max
 );
 
 # Pre-create shared JSON encoder instance for reuse in callbacks.
@@ -265,6 +270,79 @@ sub filter_float_num {
     my ($val) = @_;
     return "" unless defined($val);
     0 + $val;  # force numeric scalar (float)
+}
+
+# --- Array Filters ---
+
+# list — shallow copy of arrayref (mirrors Jinja's |list filter)
+sub filter_list {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    [@$val];
+}
+
+# first — get first element or undefined if empty/undefined
+sub filter_first {
+    my ($val) = @_;
+    return undef unless defined($val) && ref($val) eq 'ARRAY';
+    return scalar(@{$val}) > 0 ? $val->[0] : undef;
+}
+
+# last — get last element or undefined if empty/undefined
+sub filter_last {
+    my ($val) = @_;
+    return undef unless defined($val) && ref($val) eq 'ARRAY';
+    my @arr = @$val;
+    return pop @arr;
+}
+
+# reverse — returns reversed copy of array
+sub filter_reverse {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    [reverse @{$val}];
+}
+
+# slice — Python-style [start:stop:step] array slicing
+sub filter_array_slice {
+    my ($val, $start, $stop, $step) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @arr = @$val;
+    my $len = scalar @arr;
+    return [] if $len == 0;
+
+    # Handle default values for optional parameters
+    $step = 1 unless defined($step);
+    return [] if $step <= 0;
+
+    # Calculate start index (handle negative indices)
+    my $s;
+    if (!defined($start)) {
+        $s = 0;
+    } elsif ($start < 0) {
+        $s = ($len + $start) > 0 ? ($len + $start) : 0;
+    } else {
+        $s = $start >= $len ? $len : $start;
+    }
+
+    # Calculate stop index (handle negative indices and undef)
+    my $e;
+    if (!defined($stop)) {
+        $e = $len;
+    } elsif ($stop < 0) {
+        $e = ($len + $stop) >= 0 ? ($len + $stop) : 0;
+    } else {
+        $e = $stop > $len ? $len : $stop;
+    }
+
+    # Extract elements with step
+    my @result;
+    for (my $i = $s; $i < $e && $i < $len; $i += $step) {
+        push @result, $arr[$i];
+    }
+
+    return \@result;
 }
 
 1;
