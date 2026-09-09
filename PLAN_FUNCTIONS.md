@@ -103,20 +103,93 @@
 
 ### ✅ Completed
 
-| Phase | Status | Description | Commit |
-|-------|--------|-------------|--------|
-| **Phase 1** | ✅ Complete | Created `Minijinja::Functions` package with `tojson`, `items`, `startswith`, `endswith` | `166597d` |
-| **Phase 2** | ✅ Complete | Added string filters: `upper`, `lower`, `strip`, `rstrip`, `lstrip`, `title`, `capitalize`, `split`, `rsplit`, `replace`, `length_str` | (current) |
-| **Phase 3** | ✅ Complete | Added number filters: `abs`, `int`, `float` | (current) |
+| Phase | Status | Description | Commit | Functions Added |
+|-------|--------|-------------|--------|-----------------|
+| **Phase 1** | ✅ Complete | Created `Minijinja::Functions` package with `tojson`, `items`, `startswith`, `endswith` | `166597d` | 4 |
+| **Phase 2** | ✅ Complete | Added string filters (case, trim, title, split, replace, length) | `b92bdce` | 12 |
+| **Phase 3** | ✅ Complete | Added numeric helper filters (`abs`, `int`, `float`) | `f5a7dec` | 3 |
+| **Phase 4** | 🟡 Partial | Array manipulation — trivial/easy done; medium/harder pending | `48cef24` | 5/9 implemented |
 
 ### ⏳ Pending
 
-| Phase | Description | Complexity |
-|-------|-------------|------------|
-| **Phase 4** | Array filters (remaining: sort, min, max, join, map, selectattr/rejectattr) | Medium to Complex |
-| **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder |  
-| **Phase 6** | Object filters and methods (`get`, `keys`, `values`, `dictsort`) | Easy/Medium |
-| **Phase 7** | Global functions (`namespace`, `strftime_now`, `range`) | Varies |
+| Phase | Description | Complexity | Remaining Items |
+|-------|-------------|------------|-----------------|
+| **Phase 4** (cont.) | Array filters: sort, min/max, join, map, selectattr/rejectattr | Medium to Complex | 4 filters + 2 predicates |
+| **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder | ~30 test functions |
+| **Phase 6** | Object filters and methods (`get`, `keys`, `values`, `dictsort`) | Easy/Medium | 4 methods |
+| **Phase 7** | Global functions (`namespace`, `strftime_now`, `range`) | Varies | 4 functions (raise_exception already in use) |
+
+---
+
+## Progress Summary
+
+### Commits
+
+| Commit | Description | Date |
+|--------|-------------|------|
+| `166597d` | feat: extract tojson/items/startswith/endswith into Minijinja::Functions package | — |
+| `b92bdce` | feat(phase 2): add string filters (upper, lower, strip, rstrip, lstrip, title, capitalize, split, rsplit, replace, length_str) | — |
+| `f5a7dec` | feat(phase 3): implement number filters (abs, int, float) | — |
+| `48cef24` | feat(phase 4): implement array filters (list, first, last, reverse, slice) | — |
+
+### Current State
+
+- **File**: `lib/Minijinja/Functions.pm` — 34 exports across 4 packages (tojson/items/startswith/endswith + string + number + array filters)
+- **Tests**: All 99 tests passing across 8 test files
+- **Total functions implemented**: ~25 filter/function callbacks
+
+---
+
+## Exported Functions Reference
+
+All functions are registered via `add_filter()` or `add_function()` with the Perl callback name as a prefix.
+
+### Core Functions (Phase 1)
+
+| Filter/Test Name | Perl Function | Type | Notes |
+|------------------|---------------|------|-------|
+| `tojson` | `filter_tojson` | filter | JSON encoding with HTML-safe escaping (`< > & ' → \u00xx`) |
+| `items` | `filter_items` | filter | hashref → sorted `[key, value]` pairs array |
+| `startswith` | `func_startswith` | function | `$str starts with $prefix?` |
+| `istartswith` / `endswith` (test) | `sub { func_endswith(@_) }` | test | Jinja `is` syntax wrapper for endswith |
+
+### String Filters (Phase 2)
+
+| Filter Name | Perl Function | Description |
+|-------------|---------------|-------------|
+| `upper` | `filter_upper` | Convert to uppercase (`uc`) |
+| `lower` | `filter_lower` | Convert to lowercase (`lc`) |
+| `strip` | `filter_strip` | Remove whitespace/chars from both ends (optional chars arg) |
+| `rstrip` | `filter_rstrip` | Remove whitespace/chars from right end (optional chars arg) |
+| `lstrip` | `filter_lstrip` | Remove whitespace/chars from left end (optional chars arg) |
+| `title` | `filter_title` | Title case — first letter of each word uppercase, rest lowercase |
+| `capitalize` | `filter_capitalize` | Capitalize first letter only, make rest lowercase |
+| `split` | `filter_split` | Split string by delimiter, optional maxsplit support (returns arrayref) |
+| `rsplit` | `filter_rsplit` | Split from right side with optional maxsplit (returns arrayref) |
+| `replace` | `filter_replace` | Replace all occurrences of old substring with new (`\Q...\E` escaping) |
+| `length_str` | `filter_length_str` | Return character length of string |
+
+### Number Filters (Phase 3)
+
+| Filter Name | Perl Function | Description |
+|-------------|---------------|-------------|
+| `abs` | `filter_abs` | Absolute value (works on int or float) |
+| `int` (on number) | `filter_int_num` | Cast to integer via Perl's `int()`, truncating toward zero |
+| `float` (on number) | `filter_float_num` | Force numeric scalar (no-op if already numeric) |
+
+### Array Filters (Phase 4 — Partial)
+
+| Filter Name | Perl Function | Description | Status |
+|-------------|---------------|-------------|--------|
+| `list` | `filter_list` | Shallow copy of arrayref `[ @{$val} ]` | ✅ Done |
+| `first` | `filter_first` | Get first element or undef if empty/undefined | ✅ Done |
+| `last` | `filter_last` | Get last element or undef if empty/undefined (non-mutating) | ✅ Done |
+| `reverse` | `filter_reverse` | Returns reversed copy using Perl's built-in `reverse()` | ✅ Done |
+| `slice` [start:stop:step] | `filter_array_slice` | Python-style slicing with full negative index support and optional step parameter | ✅ Done |
+| `sort` [reverse] [attribute] | *(pending)* | With optional attribute access for object arrays; reverse flag only for now | ⏳ Pending |
+| `min` / `max` [attribute] | *(pending)* | Find min/max; attribute access deferred initially | ⏳ Pending |
+| `join` sep attr | *(pending)* | Join array items with separator; attribute extraction from objects deferred initially | ⏳ Pending |
+| `map` attribute | *(pending)* | Extract attribute values into new array; needs callback integration with object types | ⏳ Pending |
 
 ---
 
@@ -289,4 +362,13 @@ These would need a unified comparison helper in XS or Perl that handles type coe
 Phase 6 → Phase 4 (remaining) → Phase 5 → Phase 7  
 ```
 
-**Note**: Phases 1-3 are complete. Phase 4 is partially complete (trivial/easy items done). Remaining phases ordered by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
+**Current status**: Phases 1–3 complete ✅, Phase 4 partially complete 🟡 (5/9 array filters implemented).
+
+Remaining work sorted by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
+
+### Suggested Next Steps
+
+1. **Phase 6** (Object filters) — Easy wins: `get`, `keys`, `values` are straightforward hashref operations
+2. **Phase 4** remaining — Medium complexity but high utility: `sort`, `min`/`max`, `join`  
+3. **Phase 5** (Test functions) — ~30 `is_*` predicates needed for Jinja `{% if val is test_name %}` syntax; requires unified comparison helper
+4. **Phase 7** (Global functions) — Lower priority unless specifically needed: `namespace`, `strftime_now`, `range`
