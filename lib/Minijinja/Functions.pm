@@ -1304,4 +1304,96 @@ use strict; use warnings;
 # Allow access to any key via hash dereferencing (handled by XS layer)
 # The XS layer will call this when accessing ns.key in templates
 
+package Minijinja::Functions;
+
+sub exportable_map {
+    return (
+        # Core (Phase 1)
+        filter_tojson         => 'filter',
+        filter_items          => 'filter',
+        func_startswith       => 'function',
+        func_endswith         => 'function',
+
+        # String Filters (Phase 2)
+        filter_upper          => 'filter',
+        filter_lower          => 'filter',
+        filter_strip          => 'filter',
+        filter_rstrip         => 'filter',
+        filter_lstrip         => 'filter',
+        filter_title          => 'filter',
+        filter_capitalize     => 'filter',
+        filter_split          => 'filter',
+        filter_rsplit         => 'filter',
+        filter_replace        => 'filter',
+        filter_length_str     => 'filter',
+
+        # Number Filters (Phase 3)
+        filter_abs            => 'filter',
+        filter_int_num        => 'filter',
+        filter_float_num      => 'filter',
+
+        # Array Filters (Phase 4)
+        filter_list           => 'filter',
+        filter_first          => 'filter',
+        filter_last           => 'filter',
+        filter_reverse        => 'filter',
+        filter_array_slice    => 'filter',
+        filter_sort           => 'filter',
+        filter_min            => 'filter',
+        filter_max            => 'filter',
+        filter_join           => 'filter',
+        filter_map            => 'filter',
+
+        # Object Filters (Phase 6)
+        filter_get            => 'filter',
+        filter_keys           => 'filter',
+        filter_values         => 'filter',
+        filter_dictsort       => 'filter',
+
+        # Global Functions (Phase 7)
+        func_raise_exception   => 'function',
+        func_range             => 'function',
+        filter_strftime_now    => 'function',
+        func_namespace         => 'function',
+
+        # Test Functions (Phase 5) — type checks & comparisons (~28 tests)
+        func_is_string         => 'test',
+        func_is_integer        => 'test',
+        func_is_float          => 'test',
+        func_is_number         => 'test',
+        func_is_boolean        => 'test',
+        func_is_callable       => 'test',
+        func_is_none           => 'test',
+        func_is_undefined      => 'test',
+        func_is_defined        => 'test',
+        func_is_mapping        => 'test',
+        func_is_iterable       => 'test',
+        func_is_sequence       => 'test',
+        func_is_lower          => 'test',
+        func_is_upper          => 'test',
+        func_is_odd            => 'test',
+        func_is_even           => 'test',
+        func_is_false          => 'test',
+        func_is_true           => 'test',
+        func_is_divisibleby    => 'test',
+        func_is_in             => 'test',
+        func_is_eq             => 'test',
+        func_is_equalto        => 'test',
+        func_is_ne             => 'test',
+        func_is_lt             => 'test',
+        func_is_le             => 'test',
+        func_is_gt             => 'test',
+        func_is_ge             => 'test',
+
+        # Select/Reject Filters (Phase 5 continuation) — 4 filters with internal helpers (~26 lines)
+        filter_selectattr      => 'filter',
+        filter_rejectattr      => 'filter',
+        filter_select          => 'filter',
+        filter_reject          => 'filter',
+
+        # Internal helpers used by select/reject (not registered with minijinja, but exported for reuse)
+    );
+}
+
 1;
+

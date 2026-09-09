@@ -29,10 +29,24 @@ our @EXPORT_OK = qw(
 
     error_exists error_detail error_debug_info
     error_kind error_line error_template_name error_print
+
+    register_all_functions
 );
 
 use XSLoader;
 XSLoader::load('Minijinja', $VERSION);
+
+# Pre-import all Functions.pm subs into our own namespace so users can call
+# register_all() without importing anything from Minijinja::Functions themselves.
+BEGIN {
+    use Minijinja::Functions ();  # import nothing, just load the package
+
+    my %exports = Minijinja::Functions->exportable_map();
+    for my $name (keys %exports) {
+        no strict 'refs';
+        *$name = \&{"Minijinja::Functions::$name"};
+    }
+}
 
 sub new {
     my (%opts) = @_;
@@ -40,6 +54,18 @@ sub new {
         return M_new(\%opts);
     } else {
         return M_new();
+    }
+}
+
+# Register all functions from Minijinja::Functions onto an environment in one call.
+# Usage: use Minijinja qw(new register_all_functions); my $env = new(); register_all_functions($env);
+sub register_all_functions {
+    my ($env) = @_;
+    my %map = Minijinja::Functions->exportable_map();
+    while (my ($name, $type) = each %map) {
+        if ($type eq 'filter')      { add_filter($env, $name, \&{$name}); }
+        elsif ($type eq 'function') { add_function($env, $name, \&{$name}); }
+        elsif ($type eq 'test')     { add_test($env, $name, \&{$name}); }
     }
 }
 
