@@ -107,12 +107,12 @@
 |-------|--------|-------------|--------|
 | **Phase 1** | ✅ Complete | Created `Minijinja::Functions` package with `tojson`, `items`, `startswith`, `endswith` | `166597d` |
 | **Phase 2** | ✅ Complete | Added string filters: `upper`, `lower`, `strip`, `rstrip`, `lstrip`, `title`, `capitalize`, `split`, `rsplit`, `replace`, `length_str` | (current) |
+| **Phase 3** | ✅ Complete | Added number filters: `abs`, `int`, `float` | (current) |
 
 ### ⏳ Pending
 
 | Phase | Description | Complexity |
 |-------|-------------|------------|
-| **Phase 3** | Number type-specific filters (`abs`, `int`, `float`) | Trivial/Easy |
 | **Phase 4** | Array filters (`first`, `last`, `list`, `slice`, `sort`, `reverse`, `min`, `max`, etc.) | Easy to Complex |
 | **Phase 5** | Jinja test functions (`is_*` predicates for `{% if val is ... %}`) | Easy to Harder |
 | **Phase 6** | Object filters and methods (`get`, `keys`, `values`, `dictsort`) | Easy/Medium |
@@ -200,10 +200,17 @@ Implemented in `lib/Minijinja/Functions.pm`:
 | Filter | Type | Description |
 |--------|------|-------------|
 | `abs` | int/float | Absolute value |
-| `int` (on float) | float→int | Cast to integer |
-| `float` (on int) | int→float | Cast to float |
+| `int` (on float) | float→int | Cast to integer (truncates toward zero) |
+| `float` (on int) | int→float | Convert to floating point |
 
 Simple wrappers, can be implemented directly in XS or as callbacks.
+
+**Status: ✅ COMPLETE** 
+
+Implemented in `lib/Minijinja/Functions.pm`:
+- `filter_abs` — absolute value using numeric context (`0 + $val`)
+- `filter_int_num` — cast to integer via Perl's `int()`, truncating toward zero  
+- `filter_float_num` — force numeric scalar via `0 + $val`
 
 ---
 
@@ -270,7 +277,7 @@ These would need a unified comparison helper in XS or Perl that handles type coe
 ## Recommended Implementation Order
 
 ```
-Phase 3 → Phase 6 → Phase 4 (trivial first) → Phase 5 → Phase 7
+Phase 6 → Phase 4 (trivial first) → Phase 5 → Phase 7
 ```
 
-**Note**: Phase 1 and Phase 2 are complete. Remaining phases ordered by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
+**Note**: Phases 1, 2, and 3 are complete. Remaining phases ordered by dependency complexity and user value. The test file should be updated at each phase as new capabilities are tested.
