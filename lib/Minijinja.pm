@@ -101,13 +101,17 @@ sub tojson {
 # items — Perl equivalent of Python dict.items() returning sorted [key, value] pairs.
 sub items {
     my ($value) = @_;
-    if (!defined($value)) { return []; }
-    elsif (ref($value) eq 'HASH') {
-        return [map { [$_, $value->{$_}] } sort {$a cmp $b} keys %{$value}];
-    } elsif (ref($value) eq 'ARRAY') { return []; }
-    else {
-        my $decoded = eval { _get_json_encoder()->decode($value); };
-        if ($@ || ref($decoded) ne 'HASH') { return []; }
+    if (!defined($value)){
+        return []
+    } elsif (ref($value) eq 'HASH'){
+        return [map {[$_, $value->{$_}]} sort {$a cmp $b} keys %{$value}]
+    } elsif (ref($value) eq 'ARRAY') {
+        return []
+    } else {
+        my $decoded = eval {
+            _get_json_encoder()->decode($value)
+        };
+        return [] if $@ || ref($decoded) ne 'HASH';
         return [map { [$_, $decoded->{$_}] } sort {$a cmp $b} keys %{$decoded}];
     }
 }
@@ -127,196 +131,355 @@ sub has_suffix {
 # upper — convert string to uppercase
 sub upper {
     my ($val) = @_;
-    return "" unless defined($val); uc("$val");
+    return "" unless defined($val);
+    return uc($val);
 }
 
 # lower — convert string to lowercase
 sub lower {
     my ($val) = @_;
-    return "" unless defined($val); lc("$val");
+    return "" unless defined($val);
+    return lc($val);
 }
 
 # strip — remove whitespace from both ends of string (optional chars arg)
 sub strip {
     my ($val, $chars) = @_;
-    return "" unless defined($val); my $s = "$val";
-    if (defined($chars)) { $s =~ s/^[\Q$chars\E]+//; $s =~ s/[\Q$chars\E]+$//; }
-    else { $s =~ s/^\s+|\s+$//g; } return $s;
+    return "" unless defined($val);
+    my $s = $val;
+    if (defined($chars)) {
+        $s =~ s/^[\Q$chars\E]+//;
+        $s =~ s/[\Q$chars\E]+$//; 
+    } else {
+        $s =~ s/^\s+|\s+$//g; 
+    }
+    return $s;
 }
 
 # rstrip — remove whitespace from right end of string (optional chars arg)
 sub rstrip {
     my ($val, $chars) = @_;
-    return "" unless defined($val); my $s = "$val";
-    if (defined($chars)) { $s =~ s/[\Q$chars\E]+$//; } else { $s =~ s/\s+$//; } return $s;
+    return "" unless defined($val);
+    my $s = $val;
+    if (defined($chars)) {
+        $s =~ s/[\Q$chars\E]+$//;
+    } else {
+        $s =~ s/\s+$//;
+    }
+    return $s;
 }
 
 # lstrip — remove whitespace from left end of string (optional chars arg)
 sub lstrip {
     my ($val, $chars) = @_;
-    return "" unless defined($val); my $s = "$val";
-    if (defined($chars)) { $s =~ s/^[\Q$chars\E]+//; } else { $s =~ s/^\s+//; } return $s;
+    return "" unless defined($val);
+    my $s = $val;
+    if (defined($chars)) {
+        $s =~ s/^[\Q$chars\E]+//;
+    } else {
+        $s =~ s/^\s+//;
+    }
+    return $s;
 }
 
 # title — convert to title case: first letter of each word uppercase, rest lowercase
 sub title {
-    my ($val) = @_; return "" unless defined($val); my $s = "$val";
-    $s =~ s/(^\w|\s+\w)(\w*)/uc($1).lc($2)/ge; return $s;
+    my ($val) = @_;
+    return "" unless defined($val);
+    my $s = $val;
+    $s =~ s/(^\w|\s+\w)(\w*)/uc($1).lc($2)/ge;
+    return $s;
 }
 
 # capitalize — capitalize first letter, make rest lowercase
 sub capitalize {
-    my ($val) = @_; return "" unless defined($val); my $s = "$val";
-    $s =~ s/^(.)(.*)/uc($1) . lc($2)/ge; return $s;
+    my ($val) = @_;
+    return "" unless defined($val);
+    my $s = $val;
+    $s =~ s/^(.)(.*)/uc($1).lc($2)/ge;
+    return $s;
 }
 
 # split — split string by delimiter with optional maxsplit (count from left)
 sub split {
-    my ($val, $sep, $maxsplit) = @_; return [] unless defined($val); my $s = "$val";
+    my ($val, $sep, $maxsplit) = @_;
+    return [] unless defined($val);
+    my $s = $val;
     if (!defined($sep)) {
-        my @parts = grep { $_ ne '' } split(/\s+/, $s);
-        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) { return [splice(@parts, 0, $maxsplit + 1)]; }
+        my @parts = grep {$_ ne ''} split(/\s+/, $s);
+        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) {
+            return [splice(@parts, 0, $maxsplit + 1)];
+        }
         return \@parts;
     } else {
         my @parts = split(/\Q$sep\E/, $s);
-        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) { return [splice(@parts, 0, $maxsplit + 1)]; }
+        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) {
+            return [splice(@parts, 0, $maxsplit + 1)]; 
+        }
         return \@parts;
     }
 }
 
 # rsplit — split string from the right side with optional maxsplit
 sub rsplit {
-    my ($val, $sep, $maxsplit) = @_; return [] unless defined($val); my $s = "$val";
+    my ($val, $sep, $maxsplit) = @_;
+    return [] unless defined($val);
+    my $s = $val;
     if (!defined($sep)) {
         my @parts = grep { $_ ne '' } split(/\s+/, $s);
-        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) { return [splice(@parts, -$maxsplit - 1)]; }
+        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) {
+            return [splice(@parts, -$maxsplit - 1)]; 
+        }
         return \@parts;
     } else {
         if (defined($maxsplit) && $maxsplit > 0) {
-            my @result; while ($maxsplit > 0 && index($s, $sep) >= 0) {
-                my $pos = rindex($s, $sep); unshift @result, substr($s, $pos + length($sep)); $s = substr($s, 0, $pos); $maxsplit--;
-            } unshift @result, $s; return \@result;
-        } else { my @parts = split(/\Q$sep\E/, $s); return \@parts; }
+            my @result;
+            while ($maxsplit > 0 && index($s, $sep) >= 0) {
+                my $pos = rindex($s, $sep);
+                unshift @result, substr($s, $pos + length($sep));
+                $s = substr($s, 0, $pos);
+                $maxsplit--;
+            }
+            unshift @result, $s;
+            return \@result;
+        } else {
+            return [split(/\Q$sep\E/, $s)];
+        }
     }
 }
 
 # replace — replace all occurrences of old with new in string
 sub replace {
-    my ($val, $old, $new) = @_; return "" unless defined($val); my $s = "$val";
-    $s =~ s/\Q$old\E/$new/g; return $s;
+    my ($val, $old, $new) = @_;
+    return "" unless defined($val);
+    my $s = $val;
+    $s =~ s/\Q$old\E/$new/g;
+    return $s;
 }
 
 # length_str — return character length of string (Unicode-aware)
 sub length_str {
-    my ($val) = @_; return 0 unless defined($val); length("$val");
+    my ($val) = @_;
+    return 0 unless defined($val);
+    return length($val);
 }
 
 # abs — absolute value
 sub abs {
-    my ($val) = @_; return $val unless defined($val); my $n = 0 + $val;
-    $n < 0 ? -$n : $n;
+    my ($val) = @_;
+    return $val unless defined($val);
+    my $n = 0 + $val;
+    return $n < 0 ? -$n : $n;
 }
 
 # int_num — cast number to integer (truncates toward zero)
 sub int_num {
-    my ($val) = @_; return "" unless defined($val); int(0 + $val);
+    my ($val) = @_;
+    return "" unless defined($val);
+    return int(0 + $val);
 }
 
 # float_num — convert to floating point (no-op if already float)
 sub float_num {
-    my ($val) = @_; return "" unless defined($val); 0 + $val;
+    my ($val) = @_;
+    return "" unless defined($val);
+    return 0 + $val;
 }
 
 # list — shallow copy of arrayref
-sub list_fn { # renamed from 'list' to avoid conflict with Perl builtin
-    my ($val) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; [@$val];
+# renamed from 'list' to avoid conflict with Perl builtin
+sub list_fn {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    return [@$val];
 }
 
 # first — get first element or undefined if empty/undefined
 sub first {
-    my ($val) = @_; return undef unless defined($val) && ref($val) eq 'ARRAY';
+    my ($val) = @_;
+    return unless defined($val) && ref($val) eq 'ARRAY';
     return scalar(@{$val}) > 0 ? $val->[0] : undef;
 }
 
 # last — get last element or undefined if empty/undefined
 sub last {
-    my ($val) = @_; return undef unless defined($val) && ref($val) eq 'ARRAY';
-    my @arr = @$val; return pop @arr;
+    my ($val) = @_;
+    return unless defined($val) && ref($val) eq 'ARRAY';
+    my @arr = @$val;
+    return pop @arr;
 }
 
 # reverse — returns reversed copy of array
-sub reverse_fn { # renamed from 'reverse' to avoid conflict with Perl builtin
-    my ($val) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; [reverse @{$val}];
+# renamed from 'reverse' to avoid conflict with Perl builtin
+sub reverse_fn {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    return [reverse @{$val}];
 }
 
 # slice — Python-style [start:stop:step] array slicing
 sub array_slice {
-    my ($val, $start, $stop, $step) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY';
-    my @arr = @$val; my $len = scalar @arr; return [] if $len == 0;
-    $step = 1 unless defined($step); return [] if $step <= 0;
+    my ($val, $start, $stop, $step) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    my @arr = @$val;
+    my $len = scalar @arr;
+    return [] if $len == 0;
+    $step = 1 unless defined($step);
+    return [] if $step <= 0;
     my $s;
-    if (!defined($start)) { $s = 0; } elsif ($start < 0) { $s = ($len + $start) > 0 ? ($len + $start) : 0; } else { $s = $start >= $len ? $len : $start; }
+    if (!defined($start)) {
+        $s = 0;
+    } elsif ($start < 0) {
+        $s = ($len + $start) > 0 ? ($len + $start) : 0;
+    } else {
+        $s = $start >= $len ? $len : $start;
+    }
     my $e;
-    if (!defined($stop)) { $e = $len; } elsif ($stop < 0) { $e = ($len + $stop) >= 0 ? ($len + $stop) : 0; } else { $e = $stop > $len ? $len : $stop; }
-    my @result; for (my $i = $s; $i < $e && $i < $len; $i += $step) { push @result, $arr[$i]; } return \@result;
+    if (!defined($stop)) {
+        $e = $len;
+    } elsif ($stop < 0) {
+        $e = ($len + $stop) >= 0 ? ($len + $stop) : 0;
+    } else {
+        $e = $stop > $len ? $len : $stop;
+    }
+    my @result;
+    for (my $i = $s; $i < $e && $i < $len; $i += $step) {
+        push @result, $arr[$i]; 
+    }
+    return \@result;
 }
 
 # sort — sorted copy of array with optional reverse and attribute access
-sub sort_fn { # renamed from 'sort' to avoid conflict with Perl builtin
-    my ($val, $reverse, $attribute) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY';
-    my @arr = @$val; if (@arr == 0) { return []; }
+# renamed from 'sort' to avoid conflict with Perl builtin
+sub sort_fn {
+    my ($val, $reverse, $attribute) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    my @arr = @$val;
+    return [] if @arr == 0;
     my @sorted;
-    if (defined($attribute)) { @sorted = sort { my $a_val = Minijinja::_extract_attr($a, $attribute); my $b_val = Minijinja::_extract_attr($b, $attribute); my $cmp = Minijinja::_compare_values($a_val, $b_val); $reverse ? -$cmp : $cmp; } @arr; }
-    else { @sorted = sort { my $cmp = Minijinja::_compare_values($a, $b); $reverse ? -$cmp : $cmp; } @arr; } return \@sorted;
+    if (defined($attribute)) {
+        @sorted = sort {
+            my $a_val = Minijinja::_extract_attr($a, $attribute);
+            my $b_val = Minijinja::_extract_attr($b, $attribute);
+            my $cmp = Minijinja::_compare_values($a_val, $b_val);
+            $reverse?-$cmp:$cmp;
+        } @arr;
+    } else {
+        @sorted = sort {
+            my $cmp = Minijinja::_compare_values($a, $b);
+            $reverse?-$cmp:$cmp;
+        } @arr; 
+    }
+    return \@sorted;
 }
 
 # min — find minimum value in array with optional attribute access
 sub min {
-    my ($val, $attribute) = @_; return undef unless defined($val) && ref($val) eq 'ARRAY';
-    my @arr = grep { defined($_) && $_ ne '' } @$val; return undef if @arr == 0;
-    if (@arr == 1) { return defined($attribute) ? Minijinja::_extract_attr($arr[0], $attribute) : $arr[0]; }
-    if (defined($attribute)) { my @with_vals = map { [$_, Minijinja::_extract_attr($_, $attribute)] } @arr; my $min_pair = shift @with_vals; for my $pair (@with_vals) { if (Minijinja::_compare_values($pair->[1], $min_pair->[1]) < 0) { $min_pair = $pair; } } return $min_pair->[1]; }
-    else { my $min_val = $arr[0]; for my $item (@arr[1..$#arr]) { if (Minijinja::_compare_values($item, $min_val) < 0) { $min_val = $item; } } return $min_val; }
+    my ($val, $attribute) = @_;
+    return unless defined($val) && ref($val) eq 'ARRAY';
+    my @arr = grep {defined($_) && $_ ne ''} @$val;
+    return if @arr == 0;
+    if(@arr == 1){
+        return defined($attribute) ? Minijinja::_extract_attr($arr[0], $attribute) : $arr[0];
+    }
+    if(defined($attribute)){
+        my @with_vals = map {[$_, Minijinja::_extract_attr($_, $attribute)]} @arr;
+        my $min_pair = shift @with_vals;
+        foreach my $pair (@with_vals){
+            $min_pair = $pair if Minijinja::_compare_values($pair->[1], $min_pair->[1]) < 0;
+        }
+        return $min_pair->[1];
+    } else {
+        my $min_val = $arr[0];
+        foreach my $item (@arr[1..$#arr]){
+            $min_val = $item if Minijinja::_compare_values($item, $min_val) < 0;
+        }
+        return $min_val;
+    }
 }
 
 # max — find maximum value in array with optional attribute access
 sub max {
-    my ($val, $attribute) = @_; return undef unless defined($val) && ref($val) eq 'ARRAY';
-    my @arr = grep { defined($_) && $_ ne '' } @$val; return undef if @arr == 0;
-    if (@arr == 1) { return defined($attribute) ? Minijinja::_extract_attr($arr[0], $attribute) : $arr[0]; }
-    if (defined($attribute)) { my @with_vals = map { [$_, Minijinja::_extract_attr($_, $attribute)] } @arr; my $max_pair = shift @with_vals; for my $pair (@with_vals) { if (Minijinja::_compare_values($pair->[1], $max_pair->[1]) > 0) { $max_pair = $pair; } } return $max_pair->[1]; }
-    else { my $max_val = $arr[0]; for my $item (@arr[1..$#arr]) { if (Minijinja::_compare_values($item, $max_val) > 0) { $max_val = $item; } } return $max_val; }
+    my ($val, $attribute) = @_;
+    return unless defined($val) && ref($val) eq 'ARRAY';
+    my @arr = grep {defined($_) && $_ ne ''} @$val;
+    return if @arr == 0;
+    if (@arr == 1) {
+        return defined($attribute) ? Minijinja::_extract_attr($arr[0], $attribute) : $arr[0];
+    }
+    if (defined($attribute)) {
+        my @with_vals = map {[$_, Minijinja::_extract_attr($_, $attribute)]} @arr;
+        my $max_pair = shift @with_vals;
+        foreach my $pair (@with_vals){
+            $max_pair = $pair if Minijinja::_compare_values($pair->[1], $max_pair->[1]) > 0;
+        }
+        return $max_pair->[1];
+    } else {
+        my $max_val = $arr[0];
+        for my $item (@arr[1..$#arr]){
+            $max_val = $item if Minijinja::_compare_values($item, $max_val) > 0;
+        }
+        return $max_val;
+    }
 }
 
 # join — join array elements with separator, optional attribute extraction
 sub join {
-    my ($val, $separator, $attribute) = @_; return '' unless defined($val); my @items;
-    if (ref($val) eq 'ARRAY') { @items = @$val; } elsif (defined($val) && ref($val) ne 'HASH' && ref($val) ne 'CODE') { @items = ($val); } else { return ''; }
-    @items = grep { defined($_) } @items;
-    if (!defined($attribute)) { @items = map { "$_" } @items; return join($separator || '', @items); }
-    else { @items = map { Minijinja::_extract_attr($_, $attribute) // '' } @items; return join($separator || '', @items); }
+    my ($val, $separator, $attribute) = @_;
+    return '' unless defined($val);
+    my @items;
+    if (ref($val) eq 'ARRAY'){
+        @items = @$val;
+    } elsif (defined($val) && ref($val) ne 'HASH' && ref($val) ne 'CODE'){
+        @items = ($val);
+    } else {
+        return '';
+    }
+    @items = grep {defined($_)} @items;
+    if (!defined($attribute)) {
+        return join($separator // '', @items);
+    } else {
+        @items = map {Minijinja::_extract_attr($_, $attribute) // ''} @items;
+        return join($separator // '', @items);
+    }
 }
 
 # map — extract attribute values into new array
-sub map_fn { # renamed from 'map' to avoid conflict with Perl builtin
-    my ($val, $attribute) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; my @result;
-    for my $item (@$val) { if (!defined($item)) { push @result, undef; } else { push @result, Minijinja::_extract_attr($item, $attribute); } } return \@result;
+# renamed from 'map' to avoid conflict with Perl builtin
+sub map_fn {
+    my ($val, $attribute) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    my @result;
+    for my $item (@$val) {
+        if (!defined($item)) {
+            push @result, undef;
+        } else {
+            push @result, Minijinja::_extract_attr($item, $attribute);
+        }
+    }
+    return \@result;
 }
 
 # get — safe hash access with default fallback
 sub get {
-    my ($obj, $key, $default) = @_; return $default unless defined($obj) && ref($obj) eq 'HASH';
-    if (!exists($obj->{$key})) { return defined($default) ? $default : undef; } return $obj->{$key};
+    my ($obj, $key, $default) = @_;
+    return $obj->{$key} if defined($obj) && ref($obj) eq 'HASH' && exists($obj->{$key});
+    return $default;
 }
 
 # keys — return sorted array of hash keys as an arrayref
-sub keys_fn { # renamed from 'keys' to avoid conflict with Perl builtin
-    my ($val) = @_; return [] unless defined($val) && ref($val) eq 'HASH'; [sort {$a cmp $b} keys %{$val}];
+# renamed from 'keys' to avoid conflict with Perl builtin
+sub keys_fn {
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'HASH';
+    return [sort {$a cmp $b} keys %{$val}];
 }
 
 # values — return array of hash values as an arrayref (in sorted key order)
 sub values {
-    my ($val) = @_; return [] unless defined($val) && ref($val) eq 'HASH'; my @sorted = sort {$a cmp $b} keys %{$val}; [@{$val}{@sorted}];
+    my ($val) = @_;
+    return [] unless defined($val) && ref($val) eq 'HASH';
+    return [@{$val}{sort {$a cmp $b} keys %{$val}}];
 }
 
 # dictsort — sort dictionary by key or value into a new array of [key, value] pairs
