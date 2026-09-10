@@ -1,9 +1,9 @@
 use strict; use warnings;
 use Test::More tests => 5;
 
-use Minijinja qw(new add_function render_str);
+use Minijinja qw(minijinja add_function render_str);
 
-my $env = new();  
+my $env = minijinja();  
 add_function($env, 'startswith', \&Minijinja::Filter::has_prefix);
 
 is(render_str($env, 'tpl.j2', "{{ startswith('hello world', 'hel') }}", {}), 

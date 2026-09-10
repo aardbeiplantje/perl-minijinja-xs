@@ -9,7 +9,7 @@ BEGIN {
 # Check if we can instantiate environment  
 my $env;
 eval { 
-    $env = Minijinja->new(); 
+    $env = Minijinja->minijinja(); 
 };
 if (!$env) {
     ok(0, "Environment creation failed - libminijinja_cabi.so may be unavailable");

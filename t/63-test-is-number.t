@@ -1,9 +1,9 @@
 use strict; use warnings;
 use Test::More tests => 3;
 
-use Minijinja qw(new add_test render_str);
+use Minijinja qw(minijinja add_test render_str);
 
-my $env = new();
+my $env = minijinja();
 add_test($env, 'is_number', \&Minijinja::Test::is_number);
 
 is(render_str($env, 'tpl.j2', "{% set v = 42 %}{% if v is is_number %}1{% else %}0{% endif %}", {}), '1', 'is_number int');

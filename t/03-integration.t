@@ -2,14 +2,14 @@ use strict;
 use warnings;
 use Test::More;
 
-use Minijinja qw(new add_template remove_template clear_templates render_template render_str eval_expr add_global set_debug set_fuel clear_fuel set_recursion_limit set_trim_blocks set_lstrip_blocks set_keep_trailing_newline set_undefined_behavior apply_syntax add_filter add_function add_test set_loader set_auto_escape set_path_join error_exists error_detail error_kind error_line error_template_name error_print);
+use Minijinja qw(minijinja add_template remove_template clear_templates render_template render_str eval_expr add_global set_debug set_fuel clear_fuel set_recursion_limit set_trim_blocks set_lstrip_blocks set_keep_trailing_newline set_undefined_behavior apply_syntax add_filter add_function add_test set_loader set_auto_escape set_path_join error_exists error_detail error_kind error_line error_template_name error_print);
 
 # =============================================================================
 # Section A: Nested Data Structures (4 tests)
 # =============================================================================
 
 sub test_nested_data {
-    my $env = new();
+    my $env = minijinja();
 
     # Deeply nested hash - access 3 levels deep
     add_template($env, 'deep', '{{ a.b.c.d }}');
@@ -37,7 +37,7 @@ sub test_nested_data {
 # =============================================================================
 
 sub test_empty_containers {
-    my $env = new();
+    my $env = minijinja();
 
     # Empty list/arrayref
     add_template($env, 'empty_list', '{% for x in items %}{{ x }}{% endfor %}[done]');
@@ -63,8 +63,8 @@ sub test_empty_containers {
 
 sub test_multiple_envs {
     # Create two separate environments with independent state
-    my $env1 = new();
-    my $env2 = new();
+    my $env1 = minijinja();
+    my $env2 = minijinja();
 
     # Each env has its own templates
     add_template($env1, 'msg', 'Hello from env1: {{ name }}!');
@@ -89,7 +89,7 @@ sub test_multiple_envs {
 # =============================================================================
 
 sub test_callback_interactions {
-    my $env = new();
+    my $env = minijinja();
 
     # Filter that uses context variable  
     ok(add_filter($env, 'prefix', sub { 
@@ -131,7 +131,7 @@ sub test_large_contexts {
         $ctx{"var$i"} = "value_$i";
     }
 
-    my $env = new();
+    my $env = minijinja();
     
     # Template accessing many vars
     my $tmpl_src = join(' ', map { "{{ var$_ }}" } 1..25);
@@ -156,7 +156,7 @@ sub test_large_contexts {
 # =============================================================================
 
 sub test_unicode {
-    my $env = new();
+    my $env = minijinja();
 
     # Unicode in template source  
     add_template($env, 'uni1', 'こんにちは {{ name }}!');
@@ -175,7 +175,7 @@ sub test_unicode {
 # =============================================================================
 
 sub test_edge_cases {
-    my $env = new();
+    my $env = minijinja();
 
     # Boolean coercion in templates  
     add_template($env, 'bool_coerce', '{% if val %}truthy{% else %}falsy{% endif %}');

@@ -1,10 +1,10 @@
 use strict; use warnings;
 use Test::More tests => 2;
 
-use Minijinja qw(new add_filter render_str);
+use Minijinja qw(minijinja add_filter render_str);
 
 
-my $env = new();
+my $env = minijinja();
 add_filter($env, 'first', \&filter_first);
 
 is(render_str($env, 'tpl.j2', "{{ [1, 2, 3] | first }}", {}), '1', 'first basic');

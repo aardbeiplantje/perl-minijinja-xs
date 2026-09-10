@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Test::More;
 
-use Minijinja qw(new add_template remove_template clear_templates render_template render_str eval_expr add_global set_debug set_fuel clear_fuel set_recursion_limit set_trim_blocks set_lstrip_blocks set_keep_trailing_newline set_undefined_behavior apply_syntax add_filter add_function add_test set_loader set_auto_escape set_path_join error_exists error_detail error_kind error_line error_template_name error_print);
+use Minijinja qw(minijinja add_template remove_template clear_templates render_template render_str eval_expr add_global set_debug set_fuel clear_fuel set_recursion_limit set_trim_blocks set_lstrip_blocks set_keep_trailing_newline set_undefined_behavior apply_syntax add_filter add_function add_test set_loader set_auto_escape set_path_join error_exists error_detail error_kind error_line error_template_name error_print);
 
 
 
@@ -11,12 +11,12 @@ use Minijinja qw(new add_template remove_template clear_templates render_templat
 # =============================================================================
 
 sub test_env_creation {
-    my $env = new();
+    my $env = minijinja();
     ok($env, 'environment created');
     isa_ok($env, 'Minijinja');
 
     # Environment with config options
-    my $env2 = new({ debug => 1 });
+    my $env2 = minijinja({ debug => 1 });
     ok($env2, 'environment with debug option created');
 }
 
@@ -25,7 +25,7 @@ sub test_env_creation {
 # =============================================================================
 
 sub test_templates {
-    my $env = new();
+    my $env = minijinja();
 
     # Add template returns true
     ok(add_template($env, 'tmpl1', 'Hello'), 'template added');
@@ -53,7 +53,7 @@ sub test_templates {
 # =============================================================================
 
 sub test_rendering {
-    my $env = new();
+    my $env = minijinja();
 
     # Simple variable substitution  
     add_template($env, 'simple', '{{ name }}');
@@ -90,7 +90,7 @@ sub test_rendering {
 # =============================================================================
 
 sub test_expressions {
-    my $env = new();
+    my $env = minijinja();
 
     # Basic arithmetic
     is(eval_expr($env, '1 + 2', {}), 3, 'addition');
@@ -116,7 +116,7 @@ sub test_expressions {
 # =============================================================================
 
 sub test_globals {
-    my $env = new();
+    my $env = minijinja();
 
     # Add scalar global
     ok(add_global($env, 'site', 'MySite'), 'scalar global added');
@@ -144,7 +144,7 @@ sub test_globals {
 # =============================================================================
 
 sub test_config {
-    my $env = new();
+    my $env = minijinja();
 
     # Debug mode
     set_debug($env, 1);
@@ -178,7 +178,7 @@ sub test_config {
 # =============================================================================
 
 sub test_callbacks {
-    my $env = new();
+    my $env = minijinja();
 
     # Custom filter - uppercase strings  
     ok(add_filter($env, 'upper', sub { uc($_[0]) }), 'filter registered');
@@ -203,7 +203,7 @@ sub test_callbacks {
 # =============================================================================
 
 sub test_errors {
-    my $env = new();
+    my $env = minijinja();
 
     # No errors initially
     ok(!error_exists(), 'no errors before operations');

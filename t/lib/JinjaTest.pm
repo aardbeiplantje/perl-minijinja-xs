@@ -6,7 +6,7 @@ use warnings;
 our $VERSION = '0.1.0';
 
 use Test::More ();
-use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
+use Minijinja qw(minijinja render_str error_exists error_detail add_filter add_function add_test);
 
 # Fully-qualified namespaced references for clarity and explicitness:
 my $fn_startswith  = \&Minijinja::Function::_startswith_impl;
@@ -44,7 +44,7 @@ sub get_resources_dir {
 sub jinja_render {
     my ($template_source, $context, $opts) = @_;
 
-    my $env = new();
+    my $env = minijinja();
     unless ($env) {
         die "Failed to create Minijinja environment";
     }

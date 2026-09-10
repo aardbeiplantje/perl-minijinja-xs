@@ -3,7 +3,7 @@ use Test::More tests => 1;
 
 use lib 't/lib';
 
-use Minijinja qw(new render_str error_exists error_detail add_filter add_function add_test);
+use Minijinja qw(minijinja render_str error_exists error_detail add_filter add_function add_test);
 
 # Fully-qualified namespaced references for clarity:
 my $fn_startswith  = \&Minijinja::Function::_startswith_impl;
@@ -46,7 +46,7 @@ my $json_str = <$ifh>;
 close $ifh;
 
 my $context = JSON::PP->new->utf8->decode($json_str);
-my $env = new();
+my $env = minijinja();
 
 # startswith — identical lambda semantics to llama.cpp jinja parser
 add_function($env, 'startswith', $fn_startswith);

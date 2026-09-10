@@ -1,10 +1,10 @@
 use strict; use warnings;
 use Test::More tests => 1;
 
-use Minijinja qw(new add_filter add_function render_str);
+use Minijinja qw(minijinja add_filter add_function render_str);
 
 
-my $env = new();
+my $env = minijinja();
 add_function($env, 'raise_exception', \&Minijinja::Function::raise_exception);
 
 my $out = eval { render_str($env, 'tpl.j2', "{{ raise_exception('test error') }}", {}) };

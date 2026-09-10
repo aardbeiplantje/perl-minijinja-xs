@@ -1,10 +1,10 @@
 use strict; use warnings;
 use Test::More tests => 2;
 
-use Minijinja qw(new add_filter render_str);
+use Minijinja qw(minijinja add_filter render_str);
 
 
-my $env = new();
+my $env = minijinja();
 add_filter($env, 'last', \&Minijinja::Filter::last);
 
 is(render_str($env, 'tpl.j2', "{% set x = [1, 2, 3] | last %}{% if x is defined %}{{ x }}{% endif %}{% else %}undef{% endif %}", {}), '3', 'last basic');

@@ -1,7 +1,7 @@
 use strict; use warnings;
 use Test::More tests => 2;
 
-use Minijinja qw(new add_test render_str);
+use Minijinja qw(minijinja add_test render_str);
 
 # Note: Minijinja::Test::is_callable works with direct Perl calls (not through Jinja context)
 # because minijinja cannot preserve CODE references through its value system

@@ -1,10 +1,10 @@
 use strict; use warnings;
 use Test::More tests => 2;
 
-use Minijinja qw(new add_filter add_function render_str);
+use Minijinja qw(minijinja add_filter add_function render_str);
 
 
-my $env = new();
+my $env = minijinja();
 add_function($env, 'range', \&Minijinja::Function::range);
 
 is(render_str($env, 'tpl.j2', "{% for x in range(10) %}{{ x }},{% endfor %}", {}), '0,1,2,3,4,5,6,7,8,9,', 'range basic');

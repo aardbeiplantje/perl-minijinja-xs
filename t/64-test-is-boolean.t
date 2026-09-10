@@ -1,7 +1,7 @@
 use strict; use warnings;
 use Test::More tests => 3;
 
-use Minijinja qw(new add_test render_str);
+use Minijinja qw(minijinja add_test render_str);
 
 # Note: Minijinja::Test::is_boolean works with direct Perl calls (not through Jinja context)
 # because minijinja converts boolean true/false to PL_sv_yes/PL_sv_no 
