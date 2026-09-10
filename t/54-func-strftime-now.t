@@ -1,10 +1,7 @@
 use strict; use warnings;
 use Test::More tests => 2;
 
-use Minijinja qw(
-    new add_filter add_function render_str
-    strftime_now
-);
+use Minijinja qw(new add_filter add_function render_str strftime_now);
 
 
 my $env = new();

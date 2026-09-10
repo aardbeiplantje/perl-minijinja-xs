@@ -32,24 +32,9 @@ our @EXPORT_OK = qw(
 
     register_all_functions
 
-    filter_tojson filter_items items_fn items startswith endswith has_prefix has_suffix func_startswith func_endswith
-
-    filter_upper filter_lower filter_strip filter_rstrip filter_lstrip filter_title filter_capitalize
-    filter_split filter_rsplit filter_replace filter_length_str
-
-    abs int_num float_num
-
-    array_slice filter_first filter_last list_fn sort_fn reverse_fn join map_fn min max get keys_fn values dictsort first last
-
-    selectattr rejectattr select_fn reject_fn select reject
-
-    is_string func_is_string is_integer func_is_integer is_float func_is_float
-    is_number func_is_number is_boolean func_is_boolean is_callable func_is_callable
-    is_none func_is_none
-
     test_predicate_to_bool
 
-    func_raise_exception range strftime_now namespace_fn namespace func_range func_namespace
+    _extract_attr _compare_values _evaluate_select_pred _can_call_test _get_comparison_ops
 );
 
 use XSLoader;
@@ -66,18 +51,22 @@ sub register_all_functions {
     my ($env) = @_;
     my $emap = exportable_map();
     while (my ($name, $type) = each %$emap){
+        my $sub;
         if ($type eq 'filter'){
-            add_filter($env, $name, \&{$name});
+            $sub = "Minijinja::Filter::$name";
+            add_filter($env, $name, \&{$sub});
         } elsif ($type eq 'function'){
-            add_function($env, $name, \&{$name});
+            $sub = "Minijinja::Function::$name";
+            add_function($env, $name, \&{$sub});
         } elsif ($type eq 'test'){
-            add_test($env, $name, \&{$name}); 
+            $sub = "Minijinja::Test::$name";
+            add_test($env, $name, \&{$sub}); 
         }
     }
     return;
 }
 
-# === Filter Package ===
+# --- Filter Package ===
 
 package Minijinja::Filter;
 
@@ -551,141 +540,6 @@ sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}
 sub _get_comparison_ops {
     return { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
 }
-
-# --- Backward-compatible aliases in main Minijinja namespace ---
-
-# Filter aliases (filter_* -> minijinja::filter::*)
-*filter_tojson         = \&Minijinja::Filter::tojson;
-*filter_items          = \&Minijinja::Filter::items;
-*filter_has_prefix     = \&Minijinja::Filter::has_prefix;
-*filter_has_suffix     = \&Minijinja::Filter::has_suffix;
-*filter_upper          = \&Minijinja::Filter::upper;
-*filter_lower          = \&Minijinja::Filter::lower;
-*filter_strip          = \&Minijinja::Filter::strip;
-*filter_rstrip         = \&Minijinja::Filter::rstrip;
-*filter_lstrip         = \&Minijinja::Filter::lstrip;
-*filter_title          = \&Minijinja::Filter::title;
-*filter_capitalize     = \&Minijinja::Filter::capitalize;
-*filter_split          = \&Minijinja::Filter::split;
-*filter_rsplit         = \&Minijinja::Filter::rsplit;
-*filter_replace        = \&Minijinja::Filter::replace;
-*filter_length_str     = \&Minijinja::Filter::length_str;
-*filter_abs            = \&Minijinja::Filter::abs;
-*filter_int_num        = \&Minijinja::Filter::int_num;
-*filter_float_num      = \&Minijinja::Filter::float_num;
-*filter_list           = \&Minijinja::Filter::list_fn;
-*filter_first          = \&Minijinja::Filter::first;
-*filter_last           = \&Minijinja::Filter::last;
-*filter_reverse        = \&Minijinja::Filter::reverse_fn;
-*filter_array_slice    = \&Minijinja::Filter::array_slice;
-*filter_sort           = \&Minijinja::Filter::sort_fn;
-*filter_min            = \&Minijinja::Filter::min;
-*filter_max            = \&Minijinja::Filter::max;
-*filter_join           = \&Minijinja::Filter::join;
-*filter_map            = \&Minijinja::Filter::map_fn;
-*filter_get            = \&Minijinja::Filter::get;
-*filter_keys           = \&Minijinja::Filter::keys_fn;
-*filter_values         = \&Minijinja::Filter::values;
-*filter_dictsort       = \&Minijinja::Filter::dictsort;
-
-# Bare filter names (alias to filter_* variants for convenience)
-*abs                   = \&Minijinja::Filter::abs;
-*int_num               = \&Minijinja::Filter::int_num;
-*float_num             = \&Minijinja::Filter::float_num;
-*list                  = \&Minijinja::Filter::list_fn;
-*first                 = \&Minijinja::Filter::first;
-*last                  = \&Minijinja::Filter::last;
-*reverse               = \&Minijinja::Filter::reverse_fn;
-*array_slice           = \&Minijinja::Filter::array_slice;
-*sort                  = \&Minijinja::Filter::sort_fn;
-*min                   = \&Minijinja::Filter::min;
-*max                   = \&Minijinja::Filter::max;
-*join                  = \&Minijinja::Filter::join;
-*map                   = \&Minijinja::Filter::map_fn;
-*get                   = \&Minijinja::Filter::get;
-*keys                  = \&Minijinja::Filter::keys_fn;
-*values                = \&Minijinja::Filter::values;
-*dictsort              = \&Minijinja::Filter::dictsort;
-
-# Select/Reject filter aliases
-*filter_selectattr     = \&Minijinja::Filter::selectattr;
-*filter_rejectattr     = \&Minijinja::Filter::rejectattr;
-*filter_select         = \&Minijinja::Filter::select_fn;
-*filter_reject         = \&Minijinja::Filter::reject;
-
-# Function aliases (func_* -> minijinja::function/__ or Filter package)
-*func_startswith       = \&Minijinja::Filter::has_prefix;
-*startswith            = \&Minijinja::Filter::has_prefix;
-*func_endswith         = \&Minijinja::Filter::has_suffix;
-*endswith              = \&Minijinja::Filter::has_suffix;
-*func_raise_exception  = \&Minijinja::Function::raise_exception;
-*func_range            = \&Minijinja::Function::range;
-*range                 = \&Minijinja::Function::range;
-*func_namespace        = \&Minijinja::Function::namespace_fn;
-*namespace             = \&Minijinja::Function::namespace_fn;
-
-# strftime_now is a function but uses filter_ prefix - alias it too
-*func_strftime_now     = \&Minijinja::Function::strftime_now;
-
-# Filter/package aliases for convenience  
-*items                 = \&Minijinja::Filter::items;
-
-# Test aliases (func_is_* -> minijinja::test::__)
-*func_is_string      = \&Minijinja::Test::is_string;
-*is_string           = \&Minijinja::Test::is_string;
-*func_is_integer     = \&Minijinja::Test::is_integer;
-*is_integer          = \&Minijinja::Test::is_integer;
-*func_is_float       = \&Minijinja::Test::is_float;
-*is_float            = \&Minijinja::Test::is_float;
-*func_is_number      = \&Minijinja::Test::is_number;
-*is_number           = \&Minijinja::Test::is_number;
-*func_is_boolean     = \&Minijinja::Test::is_boolean;
-*is_boolean          = \&Minijinja::Test::is_boolean;
-*func_is_callable    = \&Minijinja::Test::is_callable;
-*is_callable         = \&Minijinja::Test::is_callable;
-*func_is_none        = \&Minijinja::Test::is_none;
-*is_none             = \&Minijinja::Test::is_none;
-*func_is_undefined   = \&Minijinja::Test::is_undefined;
-*is_undefined        = \&Minijinja::Test::is_undefined;
-*func_is_defined     = \&Minijinja::Test::is_defined;
-*is_defined          = \&Minijinja::Test::is_defined;
-*func_is_mapping     = \&Minijinja::Test::is_mapping;
-*is_mapping          = \&Minijinja::Test::is_mapping;
-*func_is_iterable    = \&Minijinja::Test::is_iterable;
-*is_iterable         = \&Minijinja::Test::is_iterable;
-*func_is_sequence    = \&Minijinja::Test::is_sequence;
-*is_sequence         = \&Minijinja::Test::is_sequence;
-*func_is_lower       = \&Minijinja::Test::is_lower;
-*is_lower            = \&Minijinja::Test::is_lower;
-*func_is_upper       = \&Minijinja::Test::is_upper;
-*is_upper            = \&Minijinja::Test::is_upper;
-*func_is_odd         = \&Minijinja::Test::is_odd;
-*is_odd              = \&Minijinja::Test::is_odd;
-*func_is_even        = \&Minijinja::Test::is_even;
-*is_even             = \&Minijinja::Test::is_even;
-*func_is_false       = \&Minijinja::Test::is_false;
-*is_false            = \&Minijinja::Test::is_false;
-*func_is_true        = \&Minijinja::Test::is_true;
-*is_true             = \&Minijinja::Test::is_true;
-*func_is_divisibleby = \&Minijinja::Test::is_divisibleby;
-*is_divisibleby      = \&Minijinja::Test::is_divisibleby;
-*func_is_in          = \&Minijinja::Test::is_in;
-*is_in               = \&Minijinja::Test::is_in;
-*func_is_eq          = \&Minijinja::Test::is_eq;
-*is_eq               = \&Minijinja::Test::is_eq;
-*func_is_equalto     = \&Minijinja::Test::is_equalto;
-*is_equalto          = \&Minijinja::Test::is_equalto;
-*func_is_ne          = \&Minijinja::Test::is_ne;
-*is_ne               = \&Minijinja::Test::is_ne;
-*func_is_lt          = \&Minijinja::Test::is_lt;
-*is_lt               = \&Minijinja::Test::is_lt;
-*func_is_le          = \&Minijinja::Test::is_le;
-*is_le               = \&Minijinja::Test::is_le;
-*func_is_gt          = \&Minijinja::Test::is_gt;
-*is_gt               = \&Minijinja::Test::is_gt;
-*func_is_ge          = \&Minijinja::Test::is_ge;
-*is_ge               = \&Minijinja::Test::is_ge;
-*test_predicate_to_bool = \&Minijinja::Test::test_predicate_to_bool;
 
 sub exportable_map {
     return {

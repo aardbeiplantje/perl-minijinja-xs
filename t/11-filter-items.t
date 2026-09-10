@@ -1,13 +1,10 @@
 use strict; use warnings;
 use Test::More tests => 4;
 
-use Minijinja qw(
-    new add_filter render_str
-    filter_items items
-);
+use Minijinja qw(new add_filter render_str);
 
 my $env = new();
-add_filter($env, 'items', \&filter_items);
+add_filter($env, 'items', \&Minijinja::Filter::items);
 
 # Hash input - returns sorted [key, value] pairs  
 is(render_str($env, 'tpl.j2', "{% for item in data | items %}[{{ item.0 }}={{ item.1 }}]{% endfor %}", { data => { b => 2, a => 1, c => 3 } }),

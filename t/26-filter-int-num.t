@@ -1,10 +1,7 @@
 use strict; use warnings;
 use Test::More tests => 3;
 
-use Minijinja qw(
-    new add_filter render_str
-    int_num
-);
+use Minijinja qw(new add_filter render_str);
 
 
 my $env = new();

@@ -1,14 +1,11 @@
 use strict; use warnings;
 use Test::More tests => 5;
 
-use Minijinja qw(
-    new add_filter render_str
-    filter_upper
-);
+use Minijinja qw(new add_filter render_str);
 
 
 my $env = new();
-add_filter($env, 'upper', \&filter_upper);
+add_filter($env, 'upper', \&Minijinja::Filter::upper);
 
 is(render_str($env, 'tpl.j2', "{% set x = 'hello' | upper %}{{ x }}", {}), 'HELLO');
 is(render_str($env, 'tpl.j2', "{% set x = 'Hello World!' | upper %}{{ x }}", {}), 'HELLO WORLD!');

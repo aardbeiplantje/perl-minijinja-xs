@@ -1,14 +1,11 @@
 use strict; use warnings;
 use Test::More tests => 4;
 
-use Minijinja qw(
-    new add_filter render_str
-    filter_title
-);
+use Minijinja qw(new add_filter render_str);
 
 
 my $env = new();
-add_filter($env, 'title', \&filter_title);
+add_filter($env, 'title', \&Minijinja::Filter::title);
 
 is(render_str($env, 'tpl.j2', "{% set x = 'hello world' | title %}{{ x }}", {}), 'Hello World', 'title basic');
 is(render_str($env, 'tpl.j2', "{% set x = "let's go" | render_str($env, 'tpl.j2', "{% set x = "let's go" | title %}{{ x }}", {}), 'Let'S Go');

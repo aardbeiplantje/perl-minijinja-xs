@@ -2,12 +2,7 @@ use strict;
 use warnings;
 use Test::More tests => 7;
 
-use Minijinja qw(
-    new add_template remove_template clear_templates
-    render_template render_str eval_expr
-    error_exists error_detail error_debug_info
-    error_kind error_line error_template_name error_print
-);
+use Minijinja qw(new add_template remove_template clear_templates render_template render_str eval_expr error_exists error_detail error_debug_info error_kind error_line error_template_name error_print);
 
 # Smoke test: environment creation and destruction (no explicit free needed)
 my $env = new();

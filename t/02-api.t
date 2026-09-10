@@ -2,15 +2,7 @@ use strict;
 use warnings;
 use Test::More;
 
-use Minijinja qw(
-    new add_template remove_template clear_templates  
-    render_template render_str eval_expr add_global
-    set_debug set_fuel clear_fuel set_recursion_limit set_trim_blocks 
-    set_lstrip_blocks set_keep_trailing_newline set_undefined_behavior
-    apply_syntax add_filter add_function add_test
-    set_loader set_auto_escape set_path_join
-    error_exists error_detail error_kind error_line error_template_name error_print
-);
+use Minijinja qw(new add_template remove_template clear_templates render_template render_str eval_expr add_global set_debug set_fuel clear_fuel set_recursion_limit set_trim_blocks set_lstrip_blocks set_keep_trailing_newline set_undefined_behavior apply_syntax add_filter add_function add_test set_loader set_auto_escape set_path_join error_exists error_detail error_kind error_line error_template_name error_print);
 
 
 
