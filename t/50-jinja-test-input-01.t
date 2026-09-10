@@ -6,10 +6,10 @@ use lib 't/lib';
 use Minijinja qw(minijinja render_str error_exists error_detail add_filter add_function add_test);
 
 # Fully-qualified namespaced references for clarity:
-my $fn_startswith  = \&Minijinja::Function::_startswith_impl;
-my $fn_endswith    = \&Minijinja::Function::_endswith_impl;
 my $filter_tojson  = \&Minijinja::Filter::tojson;
 my $filter_items   = \&Minijinja::Filter::items;
+my $fn_has_pfx     = \&Minijinja::Filter::has_prefix;
+my $fn_has_sfx     = \&Minijinja::Filter::has_suffix;
 
 use File::Basename;
 use JSON::PP ();
@@ -49,14 +49,14 @@ my $context = JSON::PP->new->utf8->decode($json_str);
 my $env = minijinja();
 
 # startswith — identical lambda semantics to llama.cpp jinja parser
-add_function($env, 'startswith', $fn_startswith);
+add_function($env, 'startswith', $fn_has_pfx);
 
 # endswith — identical lambda semantics to llama.cpp jinja parser
-add_function($env, 'endswith', $fn_endswith);
+add_function($env, 'endswith', $fn_has_sfx);
 
 # Also register as Jinja tests so they work with `is` syntax (line 72 uses `is not mapping`)
-add_test($env, 'istartswith', sub { $fn_startswith->(@_) });
-add_test($env, 'endswith', sub { $fn_endswith->(@_) });
+add_test($env, 'istartswith', sub { $fn_has_pfx->(@_) });
+add_test($env, 'endswith', sub { $fn_has_sfx->(@_) });
 
 # raise_exception — dies so rendering aborts and error_detail() returns the message
 add_function($env, 'raise_exception', \&Minijinja::Function::raise_exception);

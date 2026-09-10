@@ -891,7 +891,7 @@ sub is_float {
     return 0 if ref($val);
     my $is_numeric_str   = ($val =~ /^-?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
     my $is_not_int_float = ($val !~ /^-?(\d+)\.0$/);
-    my $has_exp          = ($val =~ /[eE]/);
+    my $has_exp          = ($val =~ /[eE]\d/);
     return ($is_numeric_str && $is_not_int_float || $has_exp) ? 1 : 0;
 }
 

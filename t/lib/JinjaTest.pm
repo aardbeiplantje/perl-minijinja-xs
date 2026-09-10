@@ -9,8 +9,6 @@ use Test::More ();
 use Minijinja qw(render_str error_exists error_detail add_filter add_function add_test);
 
 # Fully-qualified namespaced references for clarity and explicitness:
-my $fn_startswith  = \&Minijinja::Function::_startswith_impl;
-my $fn_endswith    = \&Minijinja::Function::_endswith_impl;
 my $filter_has_pfx = \&Minijinja::Filter::has_prefix;
 my $filter_has_sfx = \&Minijinja::Filter::has_suffix;
 my $raise_exn      = \&Minijinja::Function::raise_exception;
@@ -55,12 +53,12 @@ sub jinja_render {
 
     # startswith/endswith as global functions — Rust only provides these as tests (is_startingwith/is_endingwith),
     # but templates need them callable as functions via .method() → function() patching below.
-    add_function($env, 'startswith', $fn_startswith);
-    add_function($env, 'endswith', $fn_endswith);
+    add_function($env, 'startswith', $filter_has_pfx);
+    add_function($env, 'endswith', $filter_has_sfx);
 
     # Also register as Jinja tests so they can be used with 'is' syntax
-    add_test($env, 'istartswith', sub { $fn_startswith->(@_); });
-    add_test($env, 'endswith', sub { $fn_endswith->(@_); });
+    add_test($env, 'istartswith', sub { $filter_has_pfx->(@_); });
+    add_test($env, 'endswith', sub { $filter_has_sfx->(@_); });
 
     # raise_exception as a regular function that dies to abort rendering
     add_function($env, 'raise_exception', $raise_exn);
