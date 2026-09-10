@@ -63,40 +63,41 @@ XSLoader::load('Minijinja', $VERSION);
 
 sub new {
     my (%opts) = @_;
-    if (keys %opts) {
-        return M_new(\%opts);
-    } else {
-        return M_new();
-    }
+    return M_new(\%opts) if keys %opts;
+    return M_new();
 }
 
 # Register all functions from Minijinja onto an environment in one call.
 sub register_all_functions {
     my ($env) = @_;
-    my %map = exportable_map();
-    while (my ($name, $type) = each %map) {
-        if ($type eq 'filter')      { add_filter($env, $name, \&{$name}); }
-        elsif ($type eq 'function') { add_function($env, $name, \&{$name}); }
-        elsif ($type eq 'test')     { add_test($env, $name, \&{$name}); }
+    my $emap = exportable_map();
+    while (my ($name, $type) = each %$emap){
+        if ($type eq 'filter'){
+            add_filter($env, $name, \&{$name});
+        } elsif ($type eq 'function'){
+            add_function($env, $name, \&{$name});
+        } elsif ($type eq 'test'){
+            add_test($env, $name, \&{$name}); 
+        }
     }
+    return;
 }
 
 # === Filter Package ===
 
 package Minijinja::Filter;
 
-use POSIX qw(strftime);
-
 # Pre-create shared JSON encoder instance for reuse in callbacks.
-my $json_encoder = undef;
+our $json_encoder;
 
 sub _get_json_encoder {
-    unless ($json_encoder) {
-        eval { require JSON::PP };
-        if ($@) { die "Minijinja requires JSON::PP: $@"; }
-        $json_encoder = JSON::PP->new->utf8->canonical;
-    }
-    return $json_encoder;
+    return $json_encoder // do {
+        eval {
+            require JSON::PP
+        };
+        die "Minijinja requires JSON::PP: $@" if $@;
+        JSON::PP->new->utf8->canonical;
+    };
 }
 
 # tojson filter — matches Python minijinja's |tojson behavior exactly.
@@ -400,11 +401,13 @@ sub reject {
 
 package Minijinja::Function;
 
-use POSIX qw(strftime);
+use POSIX ();
 
 # raise_exception — throw a Jinja exception from templates
 sub raise_exception {
-    my ($msg) = @_; $msg //= 'Unknown error'; die "$msg";
+    my ($msg) = @_;
+    $msg //= 'Unknown error';
+    die "$msg";
 }
 
 # range — Python-style range generating arrayref [start..stop) with optional step
@@ -417,7 +420,7 @@ sub range {
 
 # strftime_now — format current time as string using POSIX::strftime
 sub strftime_now {
-    my ($fmt) = @_; $fmt //= '%Y-%m-%d %H:%M:%S'; my @t = localtime(); strftime($fmt, @t);
+    my ($fmt) = @_; $fmt //= '%Y-%m-%d %H:%M:%S'; my @t = localtime(); POSIX::strftime($fmt, @t);
 }
 
 # namespace — create a mutable object from kwargs (like Jinja's namespace())
@@ -520,9 +523,6 @@ sub test_predicate_to_bool {
 # Helper: determine if a value is "undefined" in Jinja terms
 sub _is_undefined { my ($val) = @_; return !defined($val) || $val eq 'UNDEFINED'; }
 
-# Helper: check if a subroutine can be called
-sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}) eq 'CODE'; }
-
 # Helper: comparison operator wrapper for Jinja tests
 sub _compare_test {
     my ($a, $b, $cmp_func) = @_; return 0 if _is_undefined($a) || _is_undefined($b); my $sa = "$a"; my $sb = "$b";
@@ -530,27 +530,6 @@ sub _compare_test {
 }
 
 package Minijinja;
-
-# --- Internal helper functions (used by Filter package) ---
-
-sub _extract_attr {
-    my ($obj, $attr) = @_; return $obj unless defined($obj) && $attr;
-    if (ref($obj) eq 'HASH') { return exists($obj->{$attr}) ? $obj->{$attr} : undef; }
-    elsif (ref($obj) eq 'ARRAY') { if ($attr =~ /^-?\d+$/) { my $idx = int($attr); return $idx >= 0 && $idx < scalar(@{$obj}) ? $obj->[$idx] : undef; } return undef; } else { return undef; }
-}
-
-sub _compare_values {
-    my ($a, $b) = @_; if (!defined($a) && !defined($b)) { return 0; } if (!defined($a)) { return 1; } if (!defined($b)) { return -1; }
-    my $sa = "$a"; my $sb = "$b"; if ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) { return ($sa + 0) <=> ($sb + 0); } return $sa cmp $sb;
-}
-
-sub _evaluate_select_pred {
-    my ($item, $attribute, $test_name, $args) = @_;
-    if (defined($attribute)) { my $attr_val = _extract_attr($item, $attribute); my $test_fn = "Minijinja::Test::$test_name"; if (_can_call_test($test_fn)) { return $test_fn->($attr_val, @$args); } elsif ($test_name eq 'defined') { return defined($attr_val) && !ref($attr_val) ? 1 : 0; } else { return defined($attr_val) ? 1 : 0; } }
-    else { my $test_fn = "Minijinja::Test::$test_name"; if (_can_call_test($test_fn)) { return $test_fn->($item, @$args); } elsif ($test_name eq 'defined') { return defined($item) ? 1 : 0; } else { return defined($item) ? 1 : 0; } }
-}
-
-sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}) eq 'CODE'; }
 
 # --- Backward-compatible aliases in main Minijinja namespace ---
 
@@ -593,17 +572,11 @@ sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}
 *filter_reject         = \&Minijinja::Filter::reject;
 
 # Function aliases (func_* -> minijinja::function::__)
-*func_startswith       = \&Minijinja::Function::_startswith_impl; # defined below
-*func_endswith         = \&Minijinja::Function::_endswith_impl;   # defined below
+*func_startswith       = \&Minijinja::Function::startswith;
+*func_endswith         = \&Minijinja::Function::endswith;
 *func_raise_exception  = \&Minijinja::Function::raise_exception;
 *func_range            = \&Minijinja::Function::range;
 *func_namespace        = \&Minijinja::Function::namespace_fn;
-
-# startswith/endswith as standalone functions (not in Filter package) - needed for JinjaTest.pm
-sub _startswith_impl { my ($s, $prefix) = @_; return !defined($s) || !defined($prefix) ? 0 : substr($s, 0, length($prefix)) eq $prefix; }
-sub _endswith_impl { my ($s, $suffix) = @_; return !defined($s) || !defined($suffix) ? 0 : length($s) >= length($suffix) && substr($s, -length($suffix)) eq $suffix; }
-*func_startswith     = \&_startswith_impl;
-*func_endswith       = \&_endswith_impl;
 
 # strftime_now is a function but uses filter_ prefix - alias it too
 *filter_strftime_now = \&Minijinja::Function::strftime_now;
@@ -639,7 +612,7 @@ sub _endswith_impl { my ($s, $suffix) = @_; return !defined($s) || !defined($suf
 *test_predicate_to_bool = \&Minijinja::Test::test_predicate_to_bool;
 
 sub exportable_map {
-    return (
+    return {
         # Core (Phase 1) - Filter package
         filter_tojson         => 'filter',
         filter_items          => 'filter',
@@ -726,7 +699,7 @@ sub exportable_map {
         filter_reject          => 'filter',
 
         # Internal helpers used by select/reject (not registered with minijinja, but exported for reuse)
-    );
+    };
 }
 
 1;
