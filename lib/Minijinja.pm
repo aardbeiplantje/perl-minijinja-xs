@@ -32,28 +32,22 @@ our @EXPORT_OK = qw(
 
     register_all_functions
 
-    filter_tojson filter_items
-    func_startswith func_endswith
-    filter_has_prefix filter_has_suffix
+    filter_tojson filter_items items_fn items startswith endswith has_prefix has_suffix func_startswith func_endswith
 
     filter_upper filter_lower filter_strip filter_rstrip filter_lstrip filter_title filter_capitalize
     filter_split filter_rsplit filter_replace filter_length_str
 
     abs int_num float_num
 
-    array_slice first last list sort reverse join map min max
+    array_slice filter_first filter_last list_fn sort_fn reverse_fn join map_fn min max get keys_fn values dictsort first last
 
-    get keys values dictsort
+    selectattr rejectattr select_fn reject_fn select reject
 
-    is_string is_integer is_float is_number is_boolean is_callable is_none
-    is_undefined is_defined is_mapping is_iterable is_sequence
-    is_lower is_upper is_odd is_even
-    is_false is_true
-    is_divisibleby is_in
-    is_eq is_equalto is_ne is_lt is_le is_gt is_ge
+    is_string func_is_string is_integer func_is_integer is_float func_is_float
+    is_number func_is_number is_boolean func_is_boolean is_callable func_is_callable
+    is_none func_is_none
+
     test_predicate_to_bool
-
-    selectattr rejectattr select reject
 
     func_raise_exception range strftime_now namespace_fn namespace func_range func_namespace
 );
@@ -132,14 +126,13 @@ sub items {
 # has_prefix — filter version of startswith
 sub has_prefix {
     my ($s, $prefix) = @_;
-    return !defined($s) || !defined($prefix) ? 0 : substr($s, 0, length($prefix)) eq $prefix;
+    return !defined($s) || !defined($prefix) ? "0" : (substr($s, 0, length($prefix)) eq $prefix ? "1" : "0");
 }
 
 # has_suffix — filter version of endswith
 sub has_suffix {
     my ($s, $suffix) = @_;
-    return !defined($s) || !defined($suffix) ? 0 : length($s) >= length($suffix)
-           && substr($s, -length($suffix)) eq $suffix;
+    return !defined($s) || !defined($suffix) ? "0" : (length($s) >= length($suffix) && substr($s, -length($suffix)) eq $suffix ? "1" : "0");
 }
 
 # upper — convert string to uppercase
@@ -449,7 +442,7 @@ sub is_boolean { my ($val) = @_; return 0 unless defined($val); my $s = "$val"; 
 sub is_callable { my ($val) = @_; return ref($val) eq 'CODE' ? 1 : 0; }
 
 # is_none — check if value is None/null/undefined
-sub is_none { my ($val) = @_; return 0 unless defined($val); my $s = "$val"; return ($s eq 'None' || $s eq '' && !ref($val)) ? 1 : 0; }
+sub is_none { my ($val) = @_; return _is_undefined($val) ? 1 : 0; }
 
 # is_undefined — check if value is undefined
 sub is_undefined { my ($val) = @_; return _is_undefined($val) ? 1 : 0; }
@@ -620,48 +613,78 @@ sub _get_comparison_ops {
 *filter_select         = \&Minijinja::Filter::select_fn;
 *filter_reject         = \&Minijinja::Filter::reject;
 
-# Function aliases (func_* -> minijinja::function::__)
+# Function aliases (func_* -> minijinja::function/__ or Filter package)
 *func_startswith       = \&Minijinja::Filter::has_prefix;
+*startswith            = \&Minijinja::Filter::has_prefix;
 *func_endswith         = \&Minijinja::Filter::has_suffix;
+*endswith              = \&Minijinja::Filter::has_suffix;
 *func_raise_exception  = \&Minijinja::Function::raise_exception;
 *func_range            = \&Minijinja::Function::range;
+*range                 = \&Minijinja::Function::range;
 *func_namespace        = \&Minijinja::Function::namespace_fn;
+*namespace             = \&Minijinja::Function::namespace_fn;
 
 # strftime_now is a function but uses filter_ prefix - alias it too
 *func_strftime_now     = \&Minijinja::Function::strftime_now;
 
-# Bare function names (alias to func_* variants for convenience)
-*range                 = \&Minijinja::Function::range;
-*namespace             = \&Minijinja::Function::namespace_fn;
+# Filter/package aliases for convenience  
+*items                 = \&Minijinja::Filter::items;
 
 # Test aliases (func_is_* -> minijinja::test::__)
 *func_is_string      = \&Minijinja::Test::is_string;
+*is_string           = \&Minijinja::Test::is_string;
 *func_is_integer     = \&Minijinja::Test::is_integer;
+*is_integer          = \&Minijinja::Test::is_integer;
 *func_is_float       = \&Minijinja::Test::is_float;
+*is_float            = \&Minijinja::Test::is_float;
 *func_is_number      = \&Minijinja::Test::is_number;
+*is_number           = \&Minijinja::Test::is_number;
 *func_is_boolean     = \&Minijinja::Test::is_boolean;
+*is_boolean          = \&Minijinja::Test::is_boolean;
 *func_is_callable    = \&Minijinja::Test::is_callable;
+*is_callable         = \&Minijinja::Test::is_callable;
 *func_is_none        = \&Minijinja::Test::is_none;
+*is_none             = \&Minijinja::Test::is_none;
 *func_is_undefined   = \&Minijinja::Test::is_undefined;
+*is_undefined        = \&Minijinja::Test::is_undefined;
 *func_is_defined     = \&Minijinja::Test::is_defined;
+*is_defined          = \&Minijinja::Test::is_defined;
 *func_is_mapping     = \&Minijinja::Test::is_mapping;
+*is_mapping          = \&Minijinja::Test::is_mapping;
 *func_is_iterable    = \&Minijinja::Test::is_iterable;
+*is_iterable         = \&Minijinja::Test::is_iterable;
 *func_is_sequence    = \&Minijinja::Test::is_sequence;
+*is_sequence         = \&Minijinja::Test::is_sequence;
 *func_is_lower       = \&Minijinja::Test::is_lower;
+*is_lower            = \&Minijinja::Test::is_lower;
 *func_is_upper       = \&Minijinja::Test::is_upper;
+*is_upper            = \&Minijinja::Test::is_upper;
 *func_is_odd         = \&Minijinja::Test::is_odd;
+*is_odd              = \&Minijinja::Test::is_odd;
 *func_is_even        = \&Minijinja::Test::is_even;
+*is_even             = \&Minijinja::Test::is_even;
 *func_is_false       = \&Minijinja::Test::is_false;
+*is_false            = \&Minijinja::Test::is_false;
 *func_is_true        = \&Minijinja::Test::is_true;
+*is_true             = \&Minijinja::Test::is_true;
 *func_is_divisibleby = \&Minijinja::Test::is_divisibleby;
+*is_divisibleby      = \&Minijinja::Test::is_divisibleby;
 *func_is_in          = \&Minijinja::Test::is_in;
+*is_in               = \&Minijinja::Test::is_in;
 *func_is_eq          = \&Minijinja::Test::is_eq;
+*is_eq               = \&Minijinja::Test::is_eq;
 *func_is_equalto     = \&Minijinja::Test::is_equalto;
+*is_equalto          = \&Minijinja::Test::is_equalto;
 *func_is_ne          = \&Minijinja::Test::is_ne;
+*is_ne               = \&Minijinja::Test::is_ne;
 *func_is_lt          = \&Minijinja::Test::is_lt;
+*is_lt               = \&Minijinja::Test::is_lt;
 *func_is_le          = \&Minijinja::Test::is_le;
+*is_le               = \&Minijinja::Test::is_le;
 *func_is_gt          = \&Minijinja::Test::is_gt;
+*is_gt               = \&Minijinja::Test::is_gt;
 *func_is_ge          = \&Minijinja::Test::is_ge;
+*is_ge               = \&Minijinja::Test::is_ge;
 *test_predicate_to_bool = \&Minijinja::Test::test_predicate_to_bool;
 
 sub exportable_map {

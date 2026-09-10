@@ -279,13 +279,143 @@ Sections and test counts:
 
 ---
 
+## Phase 3b: Individual Unit Tests (One Per Filter/Function/Test)
+
+Created as `t/NN-name.t` files — one per exported callable, enabling parallel test runs via `prove -j`. Each file has its own minimal environment setup and uses `Test::More` with explicit test counts.
+
+### Structure & Naming Convention
+
+| Prefix | Category | Example | File Count |
+|--------|----------|---------|------------|
+| `1*` | Core + String Filters | `t/10-filter-tojson.t`, `t/14-filter-upper.t` | 20 files |
+| `2*` | Number + Array Filters | `t/25-filter-abs.t`, `t/33-filter-sort.t` | 16 files |
+| `3*` | Object Filters | `t/38-filter-get.t`, `t/41-filter-dictsort.t` | 4 files |
+| `4*` | Select/Reject Filters | `t/42-filter-selectattr.t`, `t/45-filter-reject.t` | 4 files |
+| `5*` | Global Functions | `t/50-func-startswith.t`, `t/53-func-range.t` | 7 files (incl. jinja integration tests) |
+| `6*` | Test Functions | `t/60-test-is-string.t`, `t/66-test-is-none.t` | 7 files |
+
+Total: **58 test files** covering all exported functions, filters, and tests individually.
+
+### Sample Template
+
+```perl
+use strict; use warnings;
+use Test::More;
+
+use Minijinja qw(
+    new add_filter render_str
+    filter_upper upper
+);
+
+my $env = new();
+add_filter($env, 'upper', \&filter_upper);
+
+is(render_str($env, "{{ val | upper }}", { val => 'hello' }), 
+   'HELLO', 'upper case conversion');
+
+# ... more assertions ...
+
+done_testing();
+```
+
+### Full Coverage Table
+
+#### Core + String Filters (files 10-24)
+
+| File | Filter | Tests |
+|------|--------|-------|
+| `t/10-filter-tojson.t` | tojson — JSON encoding with HTML-safe escaping | scalar, array, hash, nested, undefined → null |
+| `t/11-filter-items.t` | items — sorted [key,value] pairs from hashref | basic, empty hash, array input yields empty |
+| `t/12-filter-has-prefix.t` | has_prefix / startswith — prefix matching | true/false match, empty prefix matches all |
+| `t/13-filter-has-suffix.t` | has_suffix / endswith — suffix matching | true/false match, empty suffix matches all |
+| `t/14-filter-upper.t` | upper — string to uppercase | basic, preserves non-alpha, empty, already uppercase |
+| `t/15-filter-lower.t` | lower — string to lowercase | basic, preserves non-alpha, empty, already lowercase |
+| `t/16-filter-strip.t` | strip — remove whitespace from both ends | basic whitespace, tabs/newlines, custom chars, no-op clean |
+| `t/17-filter-rstrip.t` | rstrip — remove whitespace from right end | basic right-only, keeps left, trailing spaces, custom chars |
+| `t/18-filter-lstrip.t` | lstrip — remove whitespace from left end | basic left-only, keeps right, leading spaces, custom chars |
+| `t/19-filter-title.t` | title — convert to title case (first letter of each word) | basic, apostrophe handling, mixed case, empty |
+| `t/20-filter-capitalize.t` | capitalize — capitalize first letter only (lowercases rest) | basic single-word, single char, empty, multi-word lowers rest |
+| `t/21-filter-split.t` | split — split string by delimiter with optional maxsplit | whitespace default, comma separator, maxsplit limit |
+| `t/22-filter-rsplit.t` | rsplit — split from the right side with optional maxsplit | comma separator, maxsplit splits from right |
+| `t/23-filter-replace.t` | replace — all occurrences of old with new in string | basic replacement, multiple occurrences, no match |
+| `t/24-filter-length-str.t` | length_str — character length of string (Unicode-aware) | basic string, empty, number as string |
+
+#### Number Filters (files 25-27)
+
+| File | Filter | Tests |
+|------|--------|-------|
+| `t/25-filter-abs.t` | abs — absolute value | negative → positive, already positive, zero, float |
+| `t/26-filter-int-num.t` | int_num — cast number to integer (truncates toward zero) | truncation positive/negative, stays same on int |
+| `t/27-filter-float-num.t` | float_num — convert to floating point (no-op if already float) | int becomes float, float stays same |
+
+#### Array Filters (files 28-37)
+
+| File | Filter | Tests |
+|------|--------|-------|
+| `t/28-filter-list.t` | list — shallow copy of arrayref | basic copy, empty array |
+| `t/29-filter-first.t` | first — get first element or undefined if empty/undefined | basic first element, empty array → undef |
+| `t/30-filter-last.t` | last — get last element or undefined if empty/undefined | basic last element, empty array → undef |
+| `t/31-filter-reverse.t` | reverse — returns reversed copy of array | basic [1,2,3]→[3,2,1], empty array |
+| `t/32-filter-array-slice.t` | array_slice — Python-style [start:stop:step] slicing | basic start/stop, with step |
+| `t/33-filter-sort.t` | sort — sorted copy with optional reverse and attribute access | ascending basic, descending via reverse flag |
+| `t/34-filter-min.t` | min — find minimum value in array with optional attribute access | basic minimum, empty array → undef |
+| `t/35-filter-max.t` | max — find maximum value in array with optional attribute access | basic maximum, empty array → undef |
+| `t/36-filter-join.t` | join — join array elements with separator, optional attribute extraction | with comma separator, string elements |
+| `t/37-filter-map.t` | map — extract attribute values into new array | attribute extraction from objects [{'name':'alice'}] → ['alice','bob'] |
+
+#### Object Filters (files 38-41)
+
+| File | Filter | Tests |
+|------|--------|-------|
+| `t/38-filter-get.t` | get — safe hash access with default fallback | existing key returns value, missing key returns undef/default |
+| `t/39-filter-keys.t` | keys — return sorted array of hash keys as an arrayref | sorted output: a,b,c from {'b':2,'a':1,'c':3} |
+| `t/40-filter-values.t` | values — return array of hash values in sorted key order | values 1,2,3 for {'b':2,'a':1,'c':3} in key order |
+| `t/41-filter-dictsort.t` | dictsort — sort dictionary by key or value into [key,value] pairs | default sort by key → [a=1][b=2] |
+
+#### Select/Reject Filters (files 42-45)
+
+| File | Filter | Tests |
+|------|--------|-------|
+| `t/42-filter-selectattr.t` | selectattr — filter array items where attribute is truthy | select active users [{'active':true}] → keep true ones |
+| `t/43-filter-rejectattr.t` | rejectattr — inverse of selectattr (filter out truthy attributes) | reject active users → keep false ones |
+| `t/44-filter-select.t` | select — filter array items by truthiness without attribute access | truthy values [0,1,'','yes',None] → [1,'yes'] |
+| `t/45-filter-reject.t` | reject — inverse of select (filter out truthy items) | falsy values [0,1,'','yes',None] → [0,'','' ]|
+
+#### Global Functions (files 50-55 + jinja integration tests)
+
+| File | Function | Tests |
+|------|----------|-------|
+| `t/50-func-startswith.t` | startswith — check if string starts with prefix | true/false match via template call |
+| `t/51-func-endswith.t` | endswith — check if string ends with suffix | true/false match via template call |
+| `t/52-func-raise-exception.t` | raise_exception — throw error from templates | render returns undef on exception |
+| `t/53-func-range.t` | range — Python-style range [start..stop) with optional step | basic 0..9, explicit start+stop |
+| `t/54-func-strftime-now.t` | strftime_now — format current time as string with POSIX::strftime | default format, custom YYYY-MM-DD pattern |
+| `t/55-func-namespace.t` | namespace — create mutable object for template scoping | basic namespace creation |
+| `t/50-jinja-test-*.t` (×5) | Jinja template testing harness | Integration tests using actual .jinja files and expected outputs in t/resources/ |
+
+#### Test Functions (files 60-66)
+
+Each test function is registered via `add_test()` and used in Jinja `{% if val | test %}` syntax.
+
+| File | Test | Tests |
+|------|------|-------|
+| `t/60-test-is-string.t` | is_string — check if value is a string | true for 'hello', false for arrayref |
+| `t/61-test-is-integer.t` | is_integer — check if value is integer (no decimal point) | true for 42, false for 3.14 |
+| `t/62-test-is-float.t` | is_float — check if value is a float | true for 3.14, false for 42 |
+| `t/63-test-is-number.t` | is_number — check if value is int or float (any numeric) | true for both int and float |
+| `t/64-test-is-boolean.t` | is_boolean — check if value is boolean ('true'/'false') | true for 'true' and 'false' strings |
+| `t/65-test-is-callable.t` | is_callable — check if value is callable (CODE ref) | true for sub { }, false for string |
+| `t/66-test-is-none.t` | is_none — check if value is None/null/undefined | true for None, false for empty string ''|
+
+---
+
 ## Implementation Order
 
 Build incrementally so each chunk compiles and can be tested independently:
 
 1. **Environment**: `new()` + M_DESTROY via XS BOOT section → test with t/00-load.t modified to actually create env
    - Verify blessed ref is returned, M_FREE fires on undef
-    
+   
 2. **Internal conversion helpers**: Static C functions `perl_to_mj_value()` and `mj_value_to_perl()`
    - Not exported XSUBs — just internal utilities. Test by building them into the environment code.
 
@@ -518,12 +648,24 @@ Allocate with `Newxz`, bless scalar ref containing pointer, M_DESTROY calls `mj_
 ## File Layout
 
 ```
-lib/Minijinja.pm    — updated with @EXPORT_OK, convenience wrappers, POD stub
+lib/Minijinja.pm    — updated with @EXPORT_OK, convenience wrappers, POD stub  
 lib/Minijinja.xs    — complete implementation (~350-450 lines)
+
+# Core integration tests (regression/sanity)
 t/00-load.t         — load test (minor change)
-t/01-render.t       — render smoke tests (rewrite, ~10 tests)
-t/02-api.t          — comprehensive API tests (rewrite, ~75 tests)
+t/01-render.t       — render smoke tests (~12 tests)
+t/02-api.t          — comprehensive API tests (~75 tests)  
 t/03-integration.t  — edge cases and integration scenarios (~18 tests)
+
+# Individual unit tests — one per function/filter/test (parallelizable via prove -j)
+t/10-filter-tojson.t              # JSON encoding with HTML escaping
+t/11-filter-items.t               # Sorted [key,value] pairs from hashref
+... (38 more filter/function/test files ... )
+t/66-test-is-none.t               # None/null/undefined check
+
+t/lib/JinjaTest.pm                # Jinja template testing framework
+t/resources/                      # .jinja templates + expected outputs for jinja integration tests
+
 PLAN.md             — this file
 ```
 
@@ -534,6 +676,8 @@ PLAN.md             — this file
 - No iterator XSUBs (~2 functions removed)
 - No free() function removed (handled by M_DESTROY)
 - Internal conversion helpers are static C functions, not exported XSUBs
+
+**Test organization**: 58 individual `t/*.t` test files covering every exported callable (filters, functions, and tests), each with its own minimal environment setup. This enables parallel execution via `prove -j` and easy identification of failures. Additional regression/sanity tests in `t/0*.t` and Jinja-specific integration tests in `t/50-jinja-test-*.t`.
 
 ---
 
