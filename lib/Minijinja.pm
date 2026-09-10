@@ -7,7 +7,7 @@ our $VERSION = "0.1.0";
 use Exporter 'import';
 
 our @EXPORT_OK = qw(
-    new
+    minijinja
 
     add_template remove_template clear_templates
 
@@ -40,29 +40,16 @@ our @EXPORT_OK = qw(
 use XSLoader;
 XSLoader::load('Minijinja', $VERSION);
 
-sub new {
+sub minijinja {
     my (%opts) = @_;
-    return M_new(\%opts) if keys %opts;
-    return M_new();
+    return new(\%opts) if keys %opts;
+    return new();
 }
 
 # Register all functions from Minijinja onto an environment in one call.
 sub register_all_functions {
     my ($env) = @_;
-    my $emap = exportable_map();
-    while (my ($name, $type) = each %$emap){
-        my $sub;
-        if ($type eq 'filter'){
-            $sub = "Minijinja::Filter::$name";
-            add_filter($env, $name, \&{$sub});
-        } elsif ($type eq 'function'){
-            $sub = "Minijinja::Function::$name";
-            add_function($env, $name, \&{$sub});
-        } elsif ($type eq 'test'){
-            $sub = "Minijinja::Test::$name";
-            add_test($env, $name, \&{$sub}); 
-        }
-    }
+    # TODO
     return;
 }
 
@@ -101,6 +88,7 @@ sub tojson {
 # items — Perl equivalent of Python dict.items() returning sorted [key, value] pairs.
 sub items {
     my ($value) = @_;
+
     if (!defined($value)){
         return []
     } elsif (ref($value) eq 'HASH'){
@@ -119,13 +107,31 @@ sub items {
 # has_prefix — filter version of startswith
 sub has_prefix {
     my ($s, $prefix) = @_;
-    return !defined($s) || !defined($prefix) ? "0" : (substr($s, 0, length($prefix)) eq $prefix ? "1" : "0");
+
+    if (!defined($s) || !defined($prefix)){
+        return "0"
+    }
+
+    if (substr($s, 0, length($prefix)) eq $prefix){
+        return "1"
+    } else {
+        return "0"
+    }
 }
 
 # has_suffix — filter version of endswith
 sub has_suffix {
     my ($s, $suffix) = @_;
-    return !defined($s) || !defined($suffix) ? "0" : (length($s) >= length($suffix) && substr($s, -length($suffix)) eq $suffix ? "1" : "0");
+
+    if (!defined($s) || !defined($suffix)){
+        return "0"
+    }
+
+    if (length($s) >= length($suffix) && substr($s, -length($suffix)) eq $suffix){
+        return "1"
+    } else {
+        return "0"
+    }
 }
 
 # upper — convert string to uppercase
@@ -146,13 +152,16 @@ sub lower {
 sub strip {
     my ($val, $chars) = @_;
     return "" unless defined($val);
+
     my $s = $val;
-    if (defined($chars)) {
+
+    if (defined($chars)){
         $s =~ s/^[\Q$chars\E]+//;
-        $s =~ s/[\Q$chars\E]+$//; 
+        $s =~ s/[\Q$chars\E]+$//;
     } else {
-        $s =~ s/^\s+|\s+$//g; 
+        $s =~ s/^\s+|\s+$//g;
     }
+
     return $s;
 }
 
@@ -160,12 +169,15 @@ sub strip {
 sub rstrip {
     my ($val, $chars) = @_;
     return "" unless defined($val);
+
     my $s = $val;
-    if (defined($chars)) {
+
+    if (defined($chars)){
         $s =~ s/[\Q$chars\E]+$//;
     } else {
         $s =~ s/\s+$//;
     }
+
     return $s;
 }
 
@@ -173,12 +185,15 @@ sub rstrip {
 sub lstrip {
     my ($val, $chars) = @_;
     return "" unless defined($val);
+
     my $s = $val;
-    if (defined($chars)) {
+
+    if (defined($chars)){
         $s =~ s/^[\Q$chars\E]+//;
     } else {
         $s =~ s/^\s+//;
     }
+
     return $s;
 }
 
@@ -205,16 +220,16 @@ sub split {
     my ($val, $sep, $maxsplit) = @_;
     return [] unless defined($val);
     my $s = $val;
-    if (!defined($sep)) {
+    if (!defined($sep)){
         my @parts = grep {$_ ne ''} split(/\s+/, $s);
-        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) {
+        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit){
             return [splice(@parts, 0, $maxsplit + 1)];
         }
         return \@parts;
     } else {
         my @parts = split(/\Q$sep\E/, $s);
-        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) {
-            return [splice(@parts, 0, $maxsplit + 1)]; 
+        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit){
+            return [splice(@parts, 0, $maxsplit + 1)];
         }
         return \@parts;
     }
@@ -225,16 +240,16 @@ sub rsplit {
     my ($val, $sep, $maxsplit) = @_;
     return [] unless defined($val);
     my $s = $val;
-    if (!defined($sep)) {
+    if (!defined($sep)){
         my @parts = grep { $_ ne '' } split(/\s+/, $s);
-        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit) {
-            return [splice(@parts, -$maxsplit - 1)]; 
+        if (defined($maxsplit) && $maxsplit > 0 && @parts > $maxsplit){
+            return [splice(@parts, -$maxsplit - 1)];
         }
         return \@parts;
     } else {
-        if (defined($maxsplit) && $maxsplit > 0) {
+        if (defined($maxsplit) && $maxsplit > 0){
             my @result;
-            while ($maxsplit > 0 && index($s, $sep) >= 0) {
+            while ($maxsplit > 0 && index($s, $sep) >= 0){
                 my $pos = rindex($s, $sep);
                 unshift @result, substr($s, $pos + length($sep));
                 $s = substr($s, 0, $pos);
@@ -269,7 +284,8 @@ sub abs {
     my ($val) = @_;
     return $val unless defined($val);
     my $n = 0 + $val;
-    return $n < 0 ? -$n : $n;
+    return -$n if $n < 0;
+    return $n;
 }
 
 # int_num — cast number to integer (truncates toward zero)
@@ -298,7 +314,8 @@ sub list_fn {
 sub first {
     my ($val) = @_;
     return unless defined($val) && ref($val) eq 'ARRAY';
-    return scalar(@{$val}) > 0 ? $val->[0] : undef;
+    return $val->[0] if scalar(@{$val});
+    return;
 }
 
 # last — get last element or undefined if empty/undefined
@@ -326,25 +343,28 @@ sub array_slice {
     return [] if $len == 0;
     $step = 1 unless defined($step);
     return [] if $step <= 0;
+
     my $s;
-    if (!defined($start)) {
+    if (!defined($start)){
         $s = 0;
-    } elsif ($start < 0) {
+    } elsif ($start < 0){
         $s = ($len + $start) > 0 ? ($len + $start) : 0;
     } else {
         $s = $start >= $len ? $len : $start;
     }
+
     my $e;
-    if (!defined($stop)) {
+    if (!defined($stop)){
         $e = $len;
-    } elsif ($stop < 0) {
+    } elsif ($stop < 0){
         $e = ($len + $stop) >= 0 ? ($len + $stop) : 0;
     } else {
         $e = $stop > $len ? $len : $stop;
     }
+
     my @result;
-    for (my $i = $s; $i < $e && $i < $len; $i += $step) {
-        push @result, $arr[$i]; 
+    for (my $i = $s; $i < $e && $i < $len; $i += $step){
+        push @result, $arr[$i];
     }
     return \@result;
 }
@@ -356,8 +376,9 @@ sub sort_fn {
     return [] unless defined($val) && ref($val) eq 'ARRAY';
     my @arr = @$val;
     return [] if @arr == 0;
+
     my @sorted;
-    if (defined($attribute)) {
+    if (defined($attribute)){
         @sorted = sort {
             my $a_val = Minijinja::_extract_attr($a, $attribute);
             my $b_val = Minijinja::_extract_attr($b, $attribute);
@@ -368,8 +389,9 @@ sub sort_fn {
         @sorted = sort {
             my $cmp = Minijinja::_compare_values($a, $b);
             $reverse?-$cmp:$cmp;
-        } @arr; 
+        } @arr;
     }
+
     return \@sorted;
 }
 
@@ -377,23 +399,38 @@ sub sort_fn {
 sub min {
     my ($val, $attribute) = @_;
     return unless defined($val) && ref($val) eq 'ARRAY';
+
     my @arr = grep {defined($_) && $_ ne ''} @$val;
     return if @arr == 0;
-    if(@arr == 1){
-        return defined($attribute) ? Minijinja::_extract_attr($arr[0], $attribute) : $arr[0];
+
+    if (@arr == 1){
+        if (defined($attribute)){
+            return Minijinja::_extract_attr($arr[0], $attribute);
+        } else {
+            return $arr[0];
+        }
     }
-    if(defined($attribute)){
+
+    if (defined($attribute)){
         my @with_vals = map {[$_, Minijinja::_extract_attr($_, $attribute)]} @arr;
         my $min_pair = shift @with_vals;
+
         foreach my $pair (@with_vals){
-            $min_pair = $pair if Minijinja::_compare_values($pair->[1], $min_pair->[1]) < 0;
+            if (Minijinja::_compare_values($pair->[1], $min_pair->[1]) < 0){
+                $min_pair = $pair;
+            }
         }
+
         return $min_pair->[1];
     } else {
         my $min_val = $arr[0];
+
         foreach my $item (@arr[1..$#arr]){
-            $min_val = $item if Minijinja::_compare_values($item, $min_val) < 0;
+            if (Minijinja::_compare_values($item, $min_val) < 0){
+                $min_val = $item;
+            }
         }
+
         return $min_val;
     }
 }
@@ -404,10 +441,14 @@ sub max {
     return unless defined($val) && ref($val) eq 'ARRAY';
     my @arr = grep {defined($_) && $_ ne ''} @$val;
     return if @arr == 0;
-    if (@arr == 1) {
-        return defined($attribute) ? Minijinja::_extract_attr($arr[0], $attribute) : $arr[0];
+    if (@arr == 1){
+        if (defined($attribute)){
+            return Minijinja::_extract_attr($arr[0], $attribute);
+        } else {
+            return $arr[0];
+        }
     }
-    if (defined($attribute)) {
+    if (defined($attribute)){
         my @with_vals = map {[$_, Minijinja::_extract_attr($_, $attribute)]} @arr;
         my $max_pair = shift @with_vals;
         foreach my $pair (@with_vals){
@@ -416,7 +457,7 @@ sub max {
         return $max_pair->[1];
     } else {
         my $max_val = $arr[0];
-        for my $item (@arr[1..$#arr]){
+        foreach my $item (@arr[1..$#arr]){
             $max_val = $item if Minijinja::_compare_values($item, $max_val) > 0;
         }
         return $max_val;
@@ -436,7 +477,7 @@ sub join {
         return '';
     }
     @items = grep {defined($_)} @items;
-    if (!defined($attribute)) {
+    if (!defined($attribute)){
         return join($separator // '', @items);
     } else {
         @items = map {Minijinja::_extract_attr($_, $attribute) // ''} @items;
@@ -450,8 +491,8 @@ sub map_fn {
     my ($val, $attribute) = @_;
     return [] unless defined($val) && ref($val) eq 'ARRAY';
     my @result;
-    for my $item (@$val) {
-        if (!defined($item)) {
+    for my $item (@$val){
+        if (!defined($item)){
             push @result, undef;
         } else {
             push @result, Minijinja::_extract_attr($item, $attribute);
@@ -463,8 +504,11 @@ sub map_fn {
 # get — safe hash access with default fallback
 sub get {
     my ($obj, $key, $default) = @_;
-    return $obj->{$key} if defined($obj) && ref($obj) eq 'HASH' && exists($obj->{$key});
-    return $default;
+    if (defined($obj) && ref($obj) eq 'HASH' && exists($obj->{$key})){
+        return $obj->{$key};
+    } else {
+        return $default;
+    }
 }
 
 # keys — return sorted array of hash keys as an arrayref
@@ -484,64 +528,288 @@ sub values {
 
 # dictsort — sort dictionary by key or value into a new array of [key, value] pairs
 sub dictsort {
-    my ($val, $by_value, $reverse) = @_; my $by_val = 0;
-    if (defined($by_value)) { if (ref($by_value) eq 'SCALAR' || !ref($by_value)) { my $s = "$by_value"; $by_val = ($s eq 'true') ? 1 : (($s eq 'false') ? 0 : 0); } elsif (ref($by_value) eq 'ARRAY') { $by_val = scalar(@$by_value) > 0 ? 1 : 0; } else { $by_val = $by_value ? 1 : 0; } }
-    my $rev = defined($reverse) ? ($reverse ? 1 : 0) : 0;
-    return [] unless defined($val) && ref($val) eq 'HASH'; my %hash = %{$val}; my @pairs;
-    if ($by_val) { @pairs = sort { my $va = "$a"; my $vb = "$b"; my $cmp = $va cmp $vb; $rev ? -$cmp : $cmp; } keys %hash; @pairs = map { [$_, $hash{$_}] } @pairs; }
-    else { @pairs = sort { my ($ka, $kb) = ($a, $b); my $cmp = $ka cmp $kb; $rev ? -$cmp : $cmp; } keys %hash; @pairs = map { [$_, $hash{$_}] } @pairs; } return \@pairs;
+    my ($val, $by_value, $reverse) = @_;
+    my $by_val = 0;
+
+    if (defined($by_value)){
+        if (ref($by_value) eq 'SCALAR' || !ref($by_value)){
+            my $s = "$by_value";
+            if ($s eq 'true'){
+                $by_val = 1;
+            } elsif ($s eq 'false'){
+                $by_val = 0;
+            } else {
+                $by_val = 0;
+            }
+        } elsif (ref($by_value) eq 'ARRAY'){
+            $by_val = scalar(@$by_value) > 0 ? 1 : 0;
+        } else {
+            $by_val = $by_value ? 1 : 0;
+        }
+    }
+
+    return [] unless defined($val) && ref($val) eq 'HASH';
+
+    my %hash = %{$val};
+    my @pairs;
+    if ($by_val){
+        @pairs = sort {
+            my $va = "$a";
+            my $vb = "$b";
+            my $cmp = $va cmp $vb;
+            if ($reverse){
+                -$cmp;
+            } else {
+                $cmp;
+            }
+        } keys %hash;
+        @pairs = map { [$_, $hash{$_}] } @pairs;
+    } else {
+        @pairs = sort {
+            my ($ka, $kb) = ($a, $b);
+            my $cmp = $ka cmp $kb;
+            if ($reverse){
+                -$cmp;
+            } else {
+                $cmp;
+            }
+        } keys %hash;
+        @pairs = map { [$_, $hash{$_}] } @pairs;
+    }
+
+    return \@pairs;
 }
 
 # selectattr — filter array items by attribute value/test predicate
 sub selectattr {
-    my ($val, $attribute, $test_name, @rest_args) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; my @result;
-    for my $item (@$val) { next unless defined($item); my $matched = 0;
-        if (!defined($test_name)) { if (defined($attribute)) { my $attr_val = Minijinja::_extract_attr($item, $attribute); $matched = Minijinja::Test::test_predicate_to_bool($attr_val); } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } }
-        else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = Minijinja::_get_comparison_ops();
-            if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = ($attribute) ? $op->(Minijinja::_extract_attr($item, $attribute), $cmp_args[0]) : $op->($item, $cmp_args[0]); } else { next; } }
-            else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
-        else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
-        if ($matched) { push @result, defined($attribute) ? Minijinja::_extract_attr($item, $attribute) : $item; } } return \@result;
+    my ($val, $attribute, $test_name, @rest_args) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+    my @result;
+    for my $item (@$val){
+        next unless defined($item);
+        my $matched = 0;
+
+        if (!defined($test_name)){
+            if (defined($attribute)){
+                my $attr_val = Minijinja::_extract_attr($item, $attribute);
+                $matched = Minijinja::Test::test_predicate_to_bool($attr_val);
+            } else {
+                $matched = Minijinja::Test::test_predicate_to_bool($item);
+            }
+        } else {
+            my @args = @rest_args;
+
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/){
+                my $op_map = Minijinja::_get_comparison_ops();
+
+                if (defined($op_map->{$test_name})){
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+
+                    if (@cmp_args){
+                        if (defined($attribute)){
+                            my $attr_val = Minijinja::_extract_attr($item, $attribute);
+                            $matched = $op->($attr_val, $cmp_args[0]);
+                        } else {
+                            $matched = $op->($item, $cmp_args[0]);
+                        }
+                    } else {
+                        next;
+                    }
+                } else {
+                    my $_ev_result = Minijinja::_evaluate_select_pred(
+                        $item, $attribute, $test_name, \@args);
+                    $matched = $_ev_result;
+                }
+            } else {
+                my $_ev_result = Minijinja::_evaluate_select_pred(
+                    $item, $attribute, $test_name, \@args);
+                $matched = $_ev_result;
+            }
+        }
+
+        if ($matched){
+            push @result, defined($attribute) ? Minijinja::_extract_attr($item, $attribute) : $item;
+        }
+    }
+
+    return \@result;
 }
 
 # rejectattr — filter out array items by attribute value/test predicate (inverse of selectattr)
 sub rejectattr {
-    my ($val, $attribute, $test_name, @rest_args) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; my @result;
-    for my $item (@$val) { next unless defined($item); my $matched = 0;
-        if (!defined($test_name)) { if (defined($attribute)) { my $attr_val = Minijinja::_extract_attr($item, $attribute); $matched = Minijinja::Test::test_predicate_to_bool($attr_val); } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } }
-        else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = Minijinja::_get_comparison_ops();
-            if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = ($attribute) ? $op->(Minijinja::_extract_attr($item, $attribute), $cmp_args[0]) : $op->($item, $cmp_args[0]); } else { next; } }
-            else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
-        else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
-        unless ($matched) { push @result, defined($attribute) ? Minijinja::_extract_attr($item, $attribute) : $item; } } return \@result;
+    my ($val, $attribute, $test_name, @rest_args) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val){
+        next unless defined($item);
+        my $matched = 0;
+
+        if (!defined($test_name)){
+            if (defined($attribute)){
+                my $attr_val = Minijinja::_extract_attr($item, $attribute);
+                $matched = Minijinja::Test::test_predicate_to_bool($attr_val);
+            } else {
+                $matched = Minijinja::Test::test_predicate_to_bool($item);
+            }
+        } else {
+            my @args = @rest_args;
+
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/){
+                my $op_map = Minijinja::_get_comparison_ops();
+
+                if (defined($op_map->{$test_name})){
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+
+                    if (@cmp_args){
+                        if (defined($attribute)){
+                            my $attr_val = Minijinja::_extract_attr($item, $attribute);
+                            $matched = $op->($attr_val, $cmp_args[0]);
+                        } else {
+                            $matched = $op->($item, $cmp_args[0]);
+                        }
+                    } else {
+                        next;
+                    }
+                } else {
+                    my $_ev_result = Minijinja::_evaluate_select_pred(
+                        $item, $attribute, $test_name, \@args);
+                    $matched = $_ev_result;
+                }
+            } else {
+                my $_ev_result = Minijinja::_evaluate_select_pred(
+                    $item, $attribute, $test_name, \@args);
+                $matched = $_ev_result;
+            }
+        }
+
+        unless ($matched){
+            push @result, defined($attribute) ? Minijinja::_extract_attr($item, $attribute) : $item;
+        }
+    }
+
+    return \@result;
 }
 
 # select — filter array items by test predicate (no attribute access)
-sub select_fn { # renamed from 'select' to avoid ambiguity
-    my ($val, $test_name, @rest_args) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; my @result;
-    for my $item (@$val) { next unless defined($item); my $matched = 0;
-        if (!defined($test_name)) { $matched = Minijinja::Test::test_predicate_to_bool($item); }
-        else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = Minijinja::_get_comparison_ops();
-            if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = $op->($item, $cmp_args[0]); } else { next; } }
-            else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
-        else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
-        if ($matched) { push @result, $item; } } return \@result;
+# renamed from 'select' to avoid ambiguity
+sub select_fn {
+    my ($val, $test_name, @rest_args) = @_;
+
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+
+    for my $item (@$val){
+        next unless defined($item);
+        my $matched = 0;
+
+        if (!defined($test_name)){
+            $matched = Minijinja::Test::test_predicate_to_bool($item);
+        } else {
+            my @args = @rest_args;
+
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/){
+                my $op_map = Minijinja::_get_comparison_ops();
+
+                if (defined($op_map->{$test_name})){
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+
+                    if (@cmp_args){
+                        $matched = $op->($item, $cmp_args[0]);
+                    } else {
+                        next;
+                    }
+                } else {
+                    my $test_fn = "Minijinja::Test::$test_name";
+
+                    if (Minijinja::_can_call_test($test_fn)){
+                        $matched = $test_fn->($item, @args);
+                    } elsif ($test_name eq 'defined'){
+                        $matched = defined($item) ? 1 : 0;
+                    } else {
+                        $matched = Minijinja::Test::test_predicate_to_bool($item);
+                    }
+                }
+            } else {
+                my $test_fn = "Minijinja::Test::$test_name";
+
+                if (Minijinja::_can_call_test($test_fn)){
+                    $matched = $test_fn->($item, @args);
+                } elsif ($test_name eq 'defined'){
+                    $matched = defined($item) ? 1 : 0;
+                } else {
+                    $matched = Minijinja::Test::test_predicate_to_bool($item);
+                }
+            }
+        }
+
+        push @result, $item if $matched;
+    }
+
+    return \@result;
 }
 
 # reject — filter out array items by test predicate (inverse of select)
 sub reject {
-    my ($val, $test_name, @rest_args) = @_; return [] unless defined($val) && ref($val) eq 'ARRAY'; my @result;
-    for my $item (@$val) { next unless defined($item); my $matched = 0;
-        if (!defined($test_name)) { $matched = Minijinja::Test::test_predicate_to_bool($item); }
-        else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = Minijinja::_get_comparison_ops();
-            if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = $op->($item, $cmp_args[0]); } else { next; } }
-            else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
-        else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
-        unless ($matched) { push @result, $item; } } return \@result;
+    my ($val, $test_name, @rest_args) = @_;
+    return [] unless defined($val) && ref($val) eq 'ARRAY';
+
+    my @result;
+    for my $item (@$val){
+        next unless defined($item);
+        my $matched = 0;
+
+        if (!defined($test_name)){
+            $matched = Minijinja::Test::test_predicate_to_bool($item);
+        } else {
+            my @args = @rest_args;
+
+            if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/){
+                my $op_map = Minijinja::_get_comparison_ops();
+
+                if (defined($op_map->{$test_name})){
+                    my $op = $op_map->{$test_name};
+                    my @cmp_args = map { $_ } @args;
+
+                    if (@cmp_args){
+                        $matched = $op->($item, $cmp_args[0]);
+                    } else {
+                        next;
+                    }
+                } else {
+                    my $test_fn = "Minijinja::Test::$test_name";
+
+                    if (Minijinja::_can_call_test($test_fn)){
+                        $matched = $test_fn->($item, @args);
+                    } elsif ($test_name eq 'defined'){
+                        $matched = defined($item) ? 1 : 0;
+                    } else {
+                        $matched = Minijinja::Test::test_predicate_to_bool($item);
+                    }
+                }
+            } else {
+                my $test_fn = "Minijinja::Test::$test_name";
+
+                if (Minijinja::_can_call_test($test_fn)){
+                    $matched = $test_fn->($item, @args);
+                } elsif ($test_name eq 'defined'){
+                    $matched = defined($item) ? 1 : 0;
+                } else {
+                    $matched = Minijinja::Test::test_predicate_to_bool($item);
+                }
+            }
+        }
+
+        push @result, $item unless $matched;
+    }
+
+    return \@result;
 }
 
 package Minijinja::Function;
@@ -558,123 +826,285 @@ sub raise_exception {
 # range — Python-style range generating arrayref [start..stop) with optional step
 sub range {
     my ($start, $stop, $step) = @_;
-    if (!defined($step)) { if (!defined($stop)) { $stop = $start; $start = 0; } else {} $step = 1; }
-    return [] unless defined($start) && defined($stop) && defined($step); my @result;
-    if ($step > 0) { push @result, $_ for ($start .. $stop - 1); } elsif ($step < 0) { push @result, $_ for reverse ($stop + 1 .. $start); } return \@result;
+
+    if (!defined($step)){
+        if (!defined($stop)){
+            $stop = $start;
+            $start = 0;
+        } else {
+            # $stop is defined but $step is not, do nothing
+        }
+
+        $step = 1;
+    }
+
+    return [] unless defined($start) && defined($stop) && defined($step);
+
+    my @result;
+
+    if ($step > 0){
+        push @result, $_ for ($start .. $stop - 1);
+    } elsif ($step < 0){
+        push @result, $_ for reverse ($stop + 1 .. $start);
+    }
+
+    return \@result;
 }
 
 # strftime_now — format current time as string using POSIX::strftime
 sub strftime_now {
-    my ($fmt) = @_; $fmt //= '%Y-%m-%d %H:%M:%S'; my @t = localtime(); POSIX::strftime($fmt, @t);
+    my ($fmt) = @_;
+    return POSIX::strftime($fmt // '%Y-%m-%d %H:%M:%S', localtime());
 }
 
 # namespace — create a mutable object from kwargs (like Jinja's namespace())
-sub namespace_fn { # renamed to avoid conflict with package name usage
-    my (%kwargs) = @_; my $ns = bless({}, 'Minijinja::Namespace'); for my $key (keys %kwargs) { $ns->{$key} = $kwargs{$key}; } return $ns;
+# renamed to avoid conflict with package name usage
+sub namespace_fn {
+    my (%kwargs) = @_;
+    my $ns = bless {}, 'Minijinja::Namespace';
+    $ns->{$_} = $kwargs{$_} for keys %kwargs;
+    return $ns;
 }
 
 package Minijinja::Test;
 
 # is_string — check if value is a string
-sub is_string { my ($val) = @_; return 0 if _is_undefined($val); return ref($val) ? 0 : 1; }
+sub is_string {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return 0 if ref($val);
+    return 1;
+    # TODO: in perl everything is a string if wanted, we probably should "exclude"
+    # e.g.: is NOT a float AND is NOT an INT,... etc. We do exclude "ref", as perl
+    # auto stringifies refs into a string. Similar like is_float() tries to be smart
+    # wrt int vs float
+}
 
 # is_integer — check if value is an integer (no decimal point in string form)
-sub is_integer { my ($val) = @_; return 0 if _is_undefined($val); my $s = "$val"; if (ref($val)) { return 0; } return ($s =~ /^-?\d+$/) ? 1 : 0; }
+sub is_integer {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return 0 if ref($val);
+    return 1 if $val =~ /^-?\d+$/;
+    return 0;
+}
 
 # is_float — check if value is a float
-sub is_float { my ($val) = @_; return 0 if _is_undefined($val); my $s = "$val"; if (ref($val)) { return 0; } return ($s =~ /^-?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $s !~ /^-?(\d+)\.0$/ || $s =~ /[eE]/) ? 1 : 0; }
+sub is_float {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return 0 if ref($val);
+    my $is_numeric_str   = ($val =~ /^-?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
+    my $is_not_int_float = ($val !~ /^-?(\d+)\.0$/);
+    my $has_exp          = ($val =~ /[eE]/);
+    return ($is_numeric_str && $is_not_int_float || $has_exp) ? 1 : 0;
+}
 
 # is_number — check if value is any numeric type (int or float)
-sub is_number { my ($val) = @_; return 0 if _is_undefined($val); my $s = "$val"; if (ref($val)) { return 0; } return ($s =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) ? 1 : 0; }
+sub is_number {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return 0 if ref($val);
+    return ($val =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) ? 1 : 0;
+}
 
 # is_boolean — check if value is a boolean
-sub is_boolean { my ($val) = @_; return 0 unless defined($val); my $s = "$val"; return ($s eq 'true' || $s eq 'false') ? 1 : 0; }
+sub is_boolean {
+    my ($val) = @_;
+    return 0 unless defined($val);
+    return ($val eq 'true' || $val eq 'false') ? 1 : 0;
+}
 
 # is_callable — check if value is callable
-sub is_callable { my ($val) = @_; return ref($val) eq 'CODE' ? 1 : 0; }
+sub is_callable {
+    my ($val) = @_;
+    return ref($val) eq 'CODE' ? 1 : 0;
+}
 
 # is_none — check if value is None/null/undefined
-sub is_none { my ($val) = @_; return _is_undefined($val) ? 1 : 0; }
+sub is_none {
+    my ($val) = @_;
+    return _is_undefined($val) ? 1 : 0;
+}
 
 # is_undefined — check if value is undefined
-sub is_undefined { my ($val) = @_; return _is_undefined($val) ? 1 : 0; }
+sub is_undefined {
+    my ($val) = @_;
+    return _is_undefined($val) ? 1 : 0;
+}
 
 # is_defined — check if value is defined (opposite of is_undefined)
-sub is_defined { my ($val) = @_; return _is_undefined($val) ? 0 : 1; }
+sub is_defined {
+    my ($val) = @_;
+
+    return _is_undefined($val) ? 0 : 1;
+}
 
 # is_mapping — check if value is a mapping (hashref)
-sub is_mapping { my ($val) = @_; return ref($val) eq 'HASH' ? 1 : 0; }
+sub is_mapping {
+    my ($val) = @_;
+    return ref($val) eq 'HASH' ? 1 : 0;
+}
 
 # is_iterable — check if value can be iterated over
-sub is_iterable { my ($val) = @_; return 0 if _is_undefined($val); return ref($val) ? (ref($val) eq 'ARRAY' || ref($val) eq 'HASH') : 1; }
+sub is_iterable {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return ref($val) ? (ref($val) eq 'ARRAY' || ref($val) eq 'HASH') : 1;
+}
 
 # is_sequence — check if value is a sequence
-sub is_sequence { my ($val) = @_; return 0 if _is_undefined($val); return ref($val) ? (ref($val) eq 'ARRAY' || !ref($val)) : 0; }
+sub is_sequence {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    return ref($val) ? (ref($val) eq 'ARRAY' || !ref($val)) : 0;
+}
 
 # is_lower — check if all cased characters in string are lowercase
-sub is_lower { my ($val) = @_; return 0 unless defined($val) && !ref($val); my $s = "$val"; return 0 unless $s =~ /[a-zA-Z]/; return ($s eq lc($s)) ? 1 : 0; }
+sub is_lower {
+    my ($val) = @_;
+    return 0 unless defined($val) && !ref($val);
+    return 0 unless $val =~ /[a-zA-Z]/;
+    return ($val eq lc($val)) ? 1 : 0;
+}
 
 # is_upper — check if all cased characters in string are uppercase
-sub is_upper { my ($val) = @_; return 0 unless defined($val) && !ref($val); my $s = "$val"; return 0 unless $s =~ /[a-zA-Z]/; return ($s eq uc($s)) ? 1 : 0; }
+sub is_upper {
+    my ($val) = @_;
+    return 0 unless defined($val) && !ref($val);
+    return 0 unless $val =~ /[a-zA-Z]/;
+    return ($val eq uc($val)) ? 1 : 0;
+}
 
 # is_odd — check if integer is odd
-sub is_odd { my ($val) = @_; return 0 if _is_undefined($val); my $n = int(0 + $val); return ($n % 2 != 0) ? 1 : 0; }
+sub is_odd {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $n = int(0 + $val);
+    return ($n % 2 != 0) ? 1 : 0;
+}
 
 # is_even — check if integer is even
-sub is_even { my ($val) = @_; return 0 if _is_undefined($val); my $n = int(0 + $val); return ($n % 2 == 0) ? 1 : 0; }
+sub is_even {
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    my $n = int(0 + $val);
+    return ($n % 2 == 0) ? 1 : 0;
+}
 
 # is_false — identity check against False
-sub is_false { my ($val) = @_; my $s = "$val"; return ($s eq 'false' || $s eq 'False') ? 1 : 0; }
+sub is_false {
+    my ($val) = @_;
+    return ($val eq 'false' || $val eq 'False') ? 1 : 0;
+}
 
 # is_true — identity check against True
-sub is_true { my ($val) = @_; my $s = "$val"; return ($s eq 'true' || $s eq 'True') ? 1 : 0; }
+sub is_true {
+    my ($val) = @_;
+    return ($val eq 'true' || $val eq 'True') ? 1 : 0;
+}
 
 # is_divisibleby — check if number is divisible by divisor (mod == 0)
-sub is_divisibleby { my ($val, $divisor) = @_; return 0 if _is_undefined($val) || !defined($divisor); if ($divisor == 0) { return 0; } my $n = 0 + $val; return ($n % $divisor == 0) ? 1 : 0; }
+sub is_divisibleby {
+    my ($val, $divisor) = @_;
+    return 0 if _is_undefined($val) || !defined($divisor);
+    return 0 if $divisor == 0;
+    my $n = 0 + $val;
+    return ($n % $divisor == 0) ? 1 : 0;
+}
 
 # is_in — membership test: needle in haystack
 sub is_in {
-    my ($needle, $haystack) = @_; return 0 if _is_undefined($needle) || !defined($haystack);
-    if (ref($haystack) eq 'ARRAY') { for my $item (@{$haystack}) { return 1 if "$needle" eq "$item"; } return 0; }
-    elsif (ref($haystack) eq 'HASH') { return exists($haystack->{$needle}) ? 1 : 0; }
-    elsif (!ref($haystack)) { return index("$haystack", "$needle") >= 0 ? 1 : 0; } else { return 0; }
+    my ($needle, $haystack) = @_;
+    return 0 if _is_undefined($needle) || !defined($haystack);
+    if (ref($haystack) eq 'ARRAY'){
+        for my $item (@{$haystack}){
+            return 1 if "$needle" eq "$item";
+        }
+
+        return 0;
+    } elsif (ref($haystack) eq 'HASH'){
+        return exists($haystack->{$needle}) ? 1 : 0;
+    } elsif (!ref($haystack)){
+        return index("$haystack", "$needle") >= 0 ? 1 : 0;
+    } else {
+        return 0;
+    }
 }
 
 # is_eq / is_equalto — equality (==)
-sub is_eq { my ($a, $b) = @_; return _compare_test($a, $b, sub { $_[0] eq $_[1] ? 1 : 0 }); }
-sub is_equalto { my ($a, $b) = @_; return is_eq($a, $b); }
+sub is_eq {
+    my ($va, $vb) = @_;
+    return _compare_test($va, $vb, sub { $_[0] eq $_[1] ? 1 : 0 });
+}
+
+sub is_equalto {
+    my ($va, $vb) = @_;
+    return is_eq($va, $vb);
+}
 
 # is_ne — not equal (!=)
-sub is_ne { my ($a, $b) = @_; return _compare_test($a, $b, sub { $_[0] ne $_[1] ? 1 : 0 }); }
+sub is_ne {
+    my ($va, $vb) = @_;
+    return _compare_test($va, $vb, sub { $_[0] ne $_[1] ? 1 : 0 });
+}
 
 # is_lt — less than (<)
-sub is_lt { my ($a, $b) = @_; return _compare_test($a, $b, sub { $_[0] < $_[1] ? 1 : 0 }); }
+sub is_lt {
+    my ($va, $vb) = @_;
+    return _compare_test($va, $vb, sub { $_[0] < $_[1] ? 1 : 0 });
+}
 
 # is_le — less than or equal (<=)
-sub is_le { my ($a, $b) = @_; return _compare_test($a, $b, sub { $_[0] <= $_[1] ? 1 : 0 }); }
+sub is_le {
+    my ($va, $vb) = @_;
+    return _compare_test($va, $vb, sub { $_[0] <= $_[1] ? 1 : 0 });
+}
 
 # is_gt — greater than (>)
-sub is_gt { my ($a, $b) = @_; return _compare_test($a, $b, sub { $_[0] > $_[1] ? 1 : 0 }); }
+sub is_gt {
+    my ($va, $vb) = @_;
+    return _compare_test($va, $vb, sub { $_[0] > $_[1] ? 1 : 0 });
+}
 
 # is_ge — greater than or equal (>=)
-sub is_ge { my ($a, $b) = @_; return _compare_test($a, $b, sub { $_[0] >= $_[1] ? 1 : 0 }); }
+sub is_ge {
+    my ($va, $vb) = @_;
+    return _compare_test($va, $vb, sub { $_[0] >= $_[1] ? 1 : 0 });
+}
 
 # test_predicate_to_bool — convert any value to a boolean (truthy/falsy like Jinja)
 sub test_predicate_to_bool {
-    my ($val) = @_; return 0 if _is_undefined($val);
-    if (!defined($val) || $val eq '' || $val eq 'false' || $val eq 'False' || $val eq 'None') { return 0; } return 1;
+    my ($val) = @_;
+    return 0 if _is_undefined($val);
+    if (!defined($val) || $val eq '' || $val eq 'false' || $val eq 'False' || $val eq 'None'){
+        return 0;
+    }
+    return 1;
 }
 
 # Helper: determine if a value is "undefined" in Jinja terms
-sub _is_undefined { my ($val) = @_; return !defined($val) || $val eq 'UNDEFINED'; }
+sub _is_undefined {
+    my ($val) = @_;
+    return !defined($val) || $val eq 'UNDEFINED';
+}
 
 # Helper: check if a subroutine can be called
-sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}) eq 'CODE'; }
+sub _can_call_test {
+    my ($name) = @_;
+    return defined(\&{$name}) && ref(\&{$name}) eq 'CODE';
+}
 
 # Helper: comparison operator wrapper for Jinja tests
 sub _compare_test {
-    my ($a, $b, $cmp_func) = @_; return 0 if _is_undefined($a) || _is_undefined($b); my $sa = "$a"; my $sb = "$b";
-    if ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) { return $cmp_func->(0 + $sa, 0 + $sb); } return $cmp_func->($sa, $sb);
+    my ($sa, $sb, $cmp_func) = @_;
+    return 0 if _is_undefined($a) || _is_undefined($b);
+    my $is_numeric_a = ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
+    my $is_numeric_b = ($sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
+    if ($is_numeric_a && $is_numeric_b){
+        return $cmp_func->(0 + $sa, 0 + $sb);
+    }
+    return $cmp_func->($sa, $sb);
 }
 
 package Minijinja;
@@ -682,116 +1112,81 @@ package Minijinja;
 # --- Internal helper functions (used by Filter package) ---
 
 sub _extract_attr {
-    my ($obj, $attr) = @_; return $obj unless defined($obj) && $attr;
-    if (ref($obj) eq 'HASH') { return exists($obj->{$attr}) ? $obj->{$attr} : undef; }
-    elsif (ref($obj) eq 'ARRAY') { if ($attr =~ /^-?\d+$/) { my $idx = int($attr); return $idx >= 0 && $idx < scalar(@{$obj}) ? $obj->[$idx] : undef; } return undef; } else { return undef; }
+    my ($obj, $attr) = @_;
+    return $obj unless defined($obj) && $attr;
+
+    if (ref($obj) eq 'HASH'){
+        return exists($obj->{$attr}) ? $obj->{$attr} : undef;
+    } elsif (ref($obj) eq 'ARRAY'){
+        if ($attr =~ /^-?\d+$/){
+            my $idx = int($attr);
+            if ($idx >= 0 && $idx < scalar(@{$obj})){
+                return $obj->[$idx];
+            }
+        }
+    }
+    return;
 }
 
 sub _compare_values {
-    my ($a, $b) = @_; if (!defined($a) && !defined($b)) { return 0; } if (!defined($a)) { return 1; } if (!defined($b)) { return -1; }
-    my $sa = "$a"; my $sb = "$b"; if ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) { return ($sa + 0) <=> ($sb + 0); } return $sa cmp $sb;
+    my ($sa, $sb) = @_;
+    return  0 if !defined($sa) && !defined($sb);
+    return  1 if !defined($sa);
+    return -1 if !defined($sb);
+    my $is_numeric_a = ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
+    my $is_numeric_b = ($sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
+    if ($is_numeric_a && $is_numeric_b){
+        return ($sa + 0) <=> ($sb + 0);
+    }
+    return $sa cmp $sb;
 }
 
 sub _evaluate_select_pred {
     my ($item, $attribute, $test_name, $args) = @_;
-    if (defined($attribute)) { my $attr_val = _extract_attr($item, $attribute); my $test_fn = "Minijinja::Test::$test_name"; if (_can_call_test($test_fn)) { return $test_fn->($attr_val, @$args); } elsif ($test_name eq 'defined') { return defined($attr_val) && !ref($attr_val) ? 1 : 0; } else { return defined($attr_val) ? 1 : 0; } }
-    else { my $test_fn = "Minijinja::Test::$test_name"; if (_can_call_test($test_fn)) { return $test_fn->($item, @$args); } elsif ($test_name eq 'defined') { return defined($item) ? 1 : 0; } else { return defined($item) ? 1 : 0; } }
+
+    if (defined($attribute)){
+        my $attr_val = _extract_attr($item, $attribute);
+        my $test_fn = "Minijinja::Test::$test_name";
+
+        if (_can_call_test($test_fn)){
+            return $test_fn->($attr_val, @$args);
+        } elsif ($test_name eq 'defined'){
+            return defined($attr_val) && !ref($attr_val) ? 1 : 0;
+        } else {
+            return defined($attr_val) ? 1 : 0;
+        }
+    } else {
+        my $test_fn = "Minijinja::Test::$test_name";
+
+        if (_can_call_test($test_fn)){
+            return $test_fn->($item, @$args);
+        } elsif ($test_name eq 'defined'){
+            return defined($item) ? 1 : 0;
+        } else {
+            return defined($item) ? 1 : 0;
+        }
+    }
 }
 
-sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}) eq 'CODE'; }
+sub _can_call_test {
+    my ($name) = @_;
+    return defined(\&{$name}) && ref(\&{$name}) eq 'CODE';
+}
 
 sub _get_comparison_ops {
-    return { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
-}
-
-sub exportable_map {
     return {
-        # Core (Phase 1) - Filter package
-        filter_tojson         => 'filter',
-        filter_items          => 'filter',
-        func_startswith       => 'function',
-        func_endswith         => 'function',
-        filter_has_prefix     => 'filter',
-        filter_has_suffix     => 'filter',
-
-        # String Filters (Phase 2) - Filter package
-        filter_upper          => 'filter',
-        filter_lower          => 'filter',
-        filter_strip          => 'filter',
-        filter_rstrip         => 'filter',
-        filter_lstrip         => 'filter',
-        filter_title          => 'filter',
-        filter_capitalize     => 'filter',
-        filter_split          => 'filter',
-        filter_rsplit         => 'filter',
-        filter_replace        => 'filter',
-        filter_length_str     => 'filter',
-
-        # Number Filters (Phase 3) - Filter package
-        filter_abs            => 'filter',
-        filter_int_num        => 'filter',
-        filter_float_num      => 'filter',
-
-        # Array Filters (Phase 4) - Filter package
-        filter_list           => 'filter',
-        filter_first          => 'filter',
-        filter_last           => 'filter',
-        filter_reverse        => 'filter',
-        filter_array_slice    => 'filter',
-        filter_sort           => 'filter',
-        filter_min            => 'filter',
-        filter_max            => 'filter',
-        filter_join           => 'filter',
-        filter_map            => 'filter',
-
-        # Object Filters (Phase 6) - Filter package
-        filter_get            => 'filter',
-        filter_keys           => 'filter',
-        filter_values         => 'filter',
-        filter_dictsort       => 'filter',
-
-        # Global Functions (Phase 7) - Function package
-        func_raise_exception   => 'function',
-        func_range             => 'function',
-        func_strftime_now      => 'function',
-        func_namespace         => 'function',
-
-        # Test Functions (Phase 5) — type checks & comparisons - Test package
-        func_is_string         => 'test',
-        func_is_integer        => 'test',
-        func_is_float          => 'test',
-        func_is_number         => 'test',
-        func_is_boolean        => 'test',
-        func_is_callable       => 'test',
-        func_is_none           => 'test',
-        func_is_undefined      => 'test',
-        func_is_defined        => 'test',
-        func_is_mapping        => 'test',
-        func_is_iterable       => 'test',
-        func_is_sequence       => 'test',
-        func_is_lower          => 'test',
-        func_is_upper          => 'test',
-        func_is_odd            => 'test',
-        func_is_even           => 'test',
-        func_is_false          => 'test',
-        func_is_true           => 'test',
-        func_is_divisibleby    => 'test',
-        func_is_in             => 'test',
-        func_is_eq             => 'test',
-        func_is_equalto        => 'test',
-        func_is_ne             => 'test',
-        func_is_lt             => 'test',
-        func_is_le             => 'test',
-        func_is_gt             => 'test',
-        func_is_ge             => 'test',
-
-        # Select/Reject Filters (Phase 5 continuation) - Filter package
-        filter_selectattr      => 'filter',
-        filter_rejectattr      => 'filter',
-        filter_select          => 'filter',
-        filter_reject          => 'filter',
-
-        # Internal helpers used by select/reject (not registered with minijinja, but exported for reuse)
+        'eq'   => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+        '=='   => sub { "$_[0]" eq "$_[1]" ? 1 : 0 },
+        'ne'   => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+        '!='   => sub { "$_[0]" ne "$_[1]" ? 1 : 0 },
+        'lt'   => sub { "$_[0]" < $_[1] ? 1 : 0 },
+        '<'    => sub { "$_[0]" < $_[1] ? 1 : 0 },
+        'le'   => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+        '<='   => sub { "$_[0]" <= $_[1] ? 1 : 0 },
+        'gt'   => sub { "$_[0]" > $_[1] ? 1 : 0 },
+        '>'    => sub { "$_[0]" > $_[1] ? 1 : 0 },
+        'ge'   => sub { "$_[0]" >= $_[1] ? 1 : 0 },
+        '>='   => sub { "$_[0]" >= $_[1] ? 1 : 0 },
     };
 }
 
