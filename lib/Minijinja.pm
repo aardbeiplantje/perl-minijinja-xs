@@ -55,7 +55,7 @@ our @EXPORT_OK = qw(
 
     selectattr rejectattr select reject
 
-    func_raise_exception range strftime_now namespace_fn namespace
+    func_raise_exception range strftime_now namespace_fn namespace func_range func_namespace
 );
 
 use XSLoader;
@@ -353,7 +353,7 @@ sub selectattr {
     for my $item (@$val) { next unless defined($item); my $matched = 0;
         if (!defined($test_name)) { if (defined($attribute)) { my $attr_val = Minijinja::_extract_attr($item, $attribute); $matched = Minijinja::Test::test_predicate_to_bool($attr_val); } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } }
         else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
+            my $op_map = Minijinja::_get_comparison_ops();
             if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = ($attribute) ? $op->(Minijinja::_extract_attr($item, $attribute), $cmp_args[0]) : $op->($item, $cmp_args[0]); } else { next; } }
             else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
         else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
@@ -366,7 +366,7 @@ sub rejectattr {
     for my $item (@$val) { next unless defined($item); my $matched = 0;
         if (!defined($test_name)) { if (defined($attribute)) { my $attr_val = Minijinja::_extract_attr($item, $attribute); $matched = Minijinja::Test::test_predicate_to_bool($attr_val); } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } }
         else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
+            my $op_map = Minijinja::_get_comparison_ops();
             if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = ($attribute) ? $op->(Minijinja::_extract_attr($item, $attribute), $cmp_args[0]) : $op->($item, $cmp_args[0]); } else { next; } }
             else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
         else { $matched = Minijinja::_evaluate_select_pred($item, $attribute, $test_name, \@args); } }
@@ -379,7 +379,7 @@ sub select_fn { # renamed from 'select' to avoid ambiguity
     for my $item (@$val) { next unless defined($item); my $matched = 0;
         if (!defined($test_name)) { $matched = Minijinja::Test::test_predicate_to_bool($item); }
         else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
+            my $op_map = Minijinja::_get_comparison_ops();
             if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = $op->($item, $cmp_args[0]); } else { next; } }
             else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
         else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
@@ -392,7 +392,7 @@ sub reject {
     for my $item (@$val) { next unless defined($item); my $matched = 0;
         if (!defined($test_name)) { $matched = Minijinja::Test::test_predicate_to_bool($item); }
         else { my @args = @rest_args; if ($test_name =~ /^(eq|ne|lt|le|gt|ge|==$|!=|<\d*|<=\d*>|\>=)$/) {
-            my $op_map = { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
+            my $op_map = Minijinja::_get_comparison_ops();
             if (defined($op_map->{$test_name})) { my $op = $op_map->{$test_name}; my @cmp_args = map { $_ } @args; if (@cmp_args) { $matched = $op->($item, $cmp_args[0]); } else { next; } }
             else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
         else { my $test_fn = "Minijinja::Test::$test_name"; if (Minijinja::_can_call_test($test_fn)) { $matched = $test_fn->($item, @args); } elsif ($test_name eq 'defined') { $matched = defined($item) ? 1 : 0; } else { $matched = Minijinja::Test::test_predicate_to_bool($item); } } }
@@ -523,6 +523,9 @@ sub test_predicate_to_bool {
 # Helper: determine if a value is "undefined" in Jinja terms
 sub _is_undefined { my ($val) = @_; return !defined($val) || $val eq 'UNDEFINED'; }
 
+# Helper: check if a subroutine can be called
+sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}) eq 'CODE'; }
+
 # Helper: comparison operator wrapper for Jinja tests
 sub _compare_test {
     my ($a, $b, $cmp_func) = @_; return 0 if _is_undefined($a) || _is_undefined($b); my $sa = "$a"; my $sb = "$b";
@@ -530,6 +533,31 @@ sub _compare_test {
 }
 
 package Minijinja;
+
+# --- Internal helper functions (used by Filter package) ---
+
+sub _extract_attr {
+    my ($obj, $attr) = @_; return $obj unless defined($obj) && $attr;
+    if (ref($obj) eq 'HASH') { return exists($obj->{$attr}) ? $obj->{$attr} : undef; }
+    elsif (ref($obj) eq 'ARRAY') { if ($attr =~ /^-?\d+$/) { my $idx = int($attr); return $idx >= 0 && $idx < scalar(@{$obj}) ? $obj->[$idx] : undef; } return undef; } else { return undef; }
+}
+
+sub _compare_values {
+    my ($a, $b) = @_; if (!defined($a) && !defined($b)) { return 0; } if (!defined($a)) { return 1; } if (!defined($b)) { return -1; }
+    my $sa = "$a"; my $sb = "$b"; if ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/ && $sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/) { return ($sa + 0) <=> ($sb + 0); } return $sa cmp $sb;
+}
+
+sub _evaluate_select_pred {
+    my ($item, $attribute, $test_name, $args) = @_;
+    if (defined($attribute)) { my $attr_val = _extract_attr($item, $attribute); my $test_fn = "Minijinja::Test::$test_name"; if (_can_call_test($test_fn)) { return $test_fn->($attr_val, @$args); } elsif ($test_name eq 'defined') { return defined($attr_val) && !ref($attr_val) ? 1 : 0; } else { return defined($attr_val) ? 1 : 0; } }
+    else { my $test_fn = "Minijinja::Test::$test_name"; if (_can_call_test($test_fn)) { return $test_fn->($item, @$args); } elsif ($test_name eq 'defined') { return defined($item) ? 1 : 0; } else { return defined($item) ? 1 : 0; } }
+}
+
+sub _can_call_test { my ($name) = @_; return defined(\&{$name}) && ref(\&{$name}) eq 'CODE'; }
+
+sub _get_comparison_ops {
+    return { 'eq' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, '==' => sub { "$_[0]" eq "$_[1]" ? 1 : 0 }, 'ne' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, '!=' => sub { "$_[0]" ne "$_[1]" ? 1 : 0 }, 'lt' => sub { "$_[0]" < $_[1] ? 1 : 0 }, '<' => sub { "$_[0]" < $_[1] ? 1 : 0 }, 'le' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, '<=' => sub { "$_[0]" <= $_[1] ? 1 : 0 }, 'gt' => sub { "$_[0]" > $_[1] ? 1 : 0 }, '>' => sub { "$_[0]" > $_[1] ? 1 : 0 }, 'ge' => sub { "$_[0]" >= $_[1] ? 1 : 0 }, '>=' => sub { "$_[0]" >= $_[1] ? 1 : 0 } };
+}
 
 # --- Backward-compatible aliases in main Minijinja namespace ---
 
@@ -566,20 +594,45 @@ package Minijinja;
 *filter_keys           = \&Minijinja::Filter::keys_fn;
 *filter_values         = \&Minijinja::Filter::values;
 *filter_dictsort       = \&Minijinja::Filter::dictsort;
+
+# Bare filter names (alias to filter_* variants for convenience)
+*abs                   = \&Minijinja::Filter::abs;
+*int_num               = \&Minijinja::Filter::int_num;
+*float_num             = \&Minijinja::Filter::float_num;
+*list                  = \&Minijinja::Filter::list_fn;
+*first                 = \&Minijinja::Filter::first;
+*last                  = \&Minijinja::Filter::last;
+*reverse               = \&Minijinja::Filter::reverse_fn;
+*array_slice           = \&Minijinja::Filter::array_slice;
+*sort                  = \&Minijinja::Filter::sort_fn;
+*min                   = \&Minijinja::Filter::min;
+*max                   = \&Minijinja::Filter::max;
+*join                  = \&Minijinja::Filter::join;
+*map                   = \&Minijinja::Filter::map_fn;
+*get                   = \&Minijinja::Filter::get;
+*keys                  = \&Minijinja::Filter::keys_fn;
+*values                = \&Minijinja::Filter::values;
+*dictsort              = \&Minijinja::Filter::dictsort;
+
+# Select/Reject filter aliases
 *filter_selectattr     = \&Minijinja::Filter::selectattr;
 *filter_rejectattr     = \&Minijinja::Filter::rejectattr;
 *filter_select         = \&Minijinja::Filter::select_fn;
 *filter_reject         = \&Minijinja::Filter::reject;
 
 # Function aliases (func_* -> minijinja::function::__)
-*func_startswith       = \&Minijinja::Function::startswith;
-*func_endswith         = \&Minijinja::Function::endswith;
+*func_startswith       = \&Minijinja::Filter::has_prefix;
+*func_endswith         = \&Minijinja::Filter::has_suffix;
 *func_raise_exception  = \&Minijinja::Function::raise_exception;
 *func_range            = \&Minijinja::Function::range;
 *func_namespace        = \&Minijinja::Function::namespace_fn;
 
 # strftime_now is a function but uses filter_ prefix - alias it too
-*filter_strftime_now = \&Minijinja::Function::strftime_now;
+*func_strftime_now     = \&Minijinja::Function::strftime_now;
+
+# Bare function names (alias to func_* variants for convenience)
+*range                 = \&Minijinja::Function::range;
+*namespace             = \&Minijinja::Function::namespace_fn;
 
 # Test aliases (func_is_* -> minijinja::test::__)
 *func_is_string      = \&Minijinja::Test::is_string;
@@ -660,7 +713,7 @@ sub exportable_map {
         # Global Functions (Phase 7) - Function package
         func_raise_exception   => 'function',
         func_range             => 'function',
-        filter_strftime_now    => 'function',
+        func_strftime_now      => 'function',
         func_namespace         => 'function',
 
         # Test Functions (Phase 5) — type checks & comparisons - Test package
