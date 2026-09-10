@@ -65,6 +65,12 @@ sub test_multiple_envs {
     # Create two separate environments with independent state
     my $env1 = minijinja();
     my $env2 = minijinja();
+    print "# ENV1=$env1\n";
+    print "# ENV2=$env2\n";
+
+    ok(defined $env1, "env1 ok");
+    ok(defined $env2, "env2 ok");
+    isnt($env1, $env2, "different ptr");
 
     # Each env has its own templates
     add_template($env1, 'msg', 'Hello from env1: {{ name }}!');

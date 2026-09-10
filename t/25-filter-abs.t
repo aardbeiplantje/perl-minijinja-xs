@@ -5,7 +5,7 @@ use Minijinja qw(minijinja add_filter render_str);
 
 
 my $env = minijinja();
-add_filter($env, 'abs', \&abs);
+add_filter($env, 'abs', \&Minijinja::Filter::abs);
 
 is(render_str($env, 'tpl.j2', "{% set x = (-5) | abs %}{{ x }}", {}), '5', 'abs positive result');
 is(render_str($env, 'tpl.j2', "{% set x = 5 | abs %}{{ x }}", {}), '5', 'abs already positive');

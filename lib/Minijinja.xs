@@ -370,7 +370,7 @@ BOOT:
     cb_data_init(aTHX);
 }
 
-SV *M_new(...)
+SV *M_create_minijinja(...)
     CODE:
         dTHX; dSP;
 

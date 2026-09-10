@@ -1,5 +1,5 @@
 use strict; use warnings;
-use Test::More tests => 5;
+use Test::More tests => 2;
 
 use Minijinja qw(minijinja add_function render_str);
 

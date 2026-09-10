@@ -41,16 +41,11 @@ use XSLoader;
 XSLoader::load('Minijinja', $VERSION);
 
 sub minijinja {
-    my (%opts) = @_;
-    return new(\%opts) if keys %opts;
-    return new();
-}
-
-# Register all functions from Minijinja onto an environment in one call.
-sub register_all_functions {
-    my ($env) = @_;
-    # TODO
-    return;
+    my ($class, %opts) = @_;
+    my $_j;
+    $_j   = create_minijinja(\%opts) if keys %opts;
+    $_j //= create_minijinja();
+    return bless $_j, ref($class) || $class || "Minijinja";
 }
 
 # --- Filter Package ===

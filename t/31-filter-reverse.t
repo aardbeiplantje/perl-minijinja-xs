@@ -5,9 +5,9 @@ use Minijinja qw(minijinja add_filter render_str);
 
 
 my $env = minijinja();
-add_filter($env, 'reverse_fn', \\&reverse_fnMinijinja::Filter::reverse_fn);
+add_filter($env, 'reverse', \&Minijinja::Filter::reverse_fn);
 
-is(render_str($env, 'tpl.j2', "{% for x in [1, 2, 3] | reverse %}{{ x }},{% endfor %}", {}), '3,2,1,', '');
-is(render_str($env, 'tpl.j2', "{% for x in [] | reverse %}X{% endfor %}", {}), '', '');
+is(render_str($env, 'tpl.j2', "{% for x in [1, 2, 3] | reverse %}{{ x }},{% endfor %}", {}), '3,2,1,', 'reverse basic');
+is(render_str($env, 'tpl.j2', "{% for x in [] | reverse %}X{% endfor %}", {}), '', 'reverse empty');
 
 done_testing();
