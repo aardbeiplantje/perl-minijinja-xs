@@ -34,6 +34,7 @@ WriteMakefile(
     CC                  => 'g++',
     LD                  => 'g++',
     TESTS               => 't/*.t',
+    HARNESS_OPTIONS     => 'j4',
     test                => {
         HARNESS_PERL_SWITCHES => '-MDevel::Cover',
     },
