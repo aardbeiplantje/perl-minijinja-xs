@@ -33,8 +33,20 @@ WriteMakefile(
     },
     CC                  => 'g++',
     LD                  => 'g++',
+    TESTS               => 't/*.t',
+    test                => {
+        HARNESS_PERL_SWITCHES => '-MDevel::Cover',
+    },
     dist                => {
         COMPRESS        => 'gzip -9f',
         SUFFIX          => 'gz'
     },
 );
+
+sub MY::postamble {
+    return <<'MAKE_FRAG';
+testcover: pure_all
+	HARNESS_PERL_SWITCHES=-MDevel::Cover prove -b -v t/
+	cover
+MAKE_FRAG
+}
