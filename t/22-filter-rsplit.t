@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for p in 'x,y,z' | rsplit(',') %}{{ p }},{% en
 is(render_str($env, 'tpl.j2', "{% for p in 'a,b,c,d,e' | rsplit(',', 2) %}{{ p }},{% endfor %}", {}), 'a,b,c,d,e,');
 
 done_testing();
+
+1;

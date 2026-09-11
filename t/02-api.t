@@ -249,3 +249,5 @@ test_callbacks();
 test_errors();
 
 done_testing();
+
+1;

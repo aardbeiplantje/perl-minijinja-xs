@@ -17,3 +17,5 @@ is(Minijinja::Test::is_integer("0"), 1, 'is_integer "0" matches integer regex');
 is(Minijinja::Test::is_integer('3.14'), 0, 'is_integer decimal string rejected');
 
 done_testing();
+
+1;

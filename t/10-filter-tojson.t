@@ -32,3 +32,5 @@ is(render_str($env, 'tpl.j2', "{% set n = {'items': [1, 2], 'name': 'test'} | to
 # Undefined value
 is(render_str($env, 'tpl.j2', "{% set u = undefined | tojson %}{{ u }}", {}),
    'null', 'undefined tojson null');
+
+1;

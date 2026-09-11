@@ -18,3 +18,5 @@ is(render_str($env, 'tpl.j2', "{% for x in arr | items %}X{% endfor %}", { arr =
 
 # Scalar input (should return empty arrayref)  
 is(render_str($env, 'tpl.j2', "{% for x in str_val | items %}X{% endfor %}", { str_val => "hello" }), '', 'scalar to items yields nothing');
+
+1;

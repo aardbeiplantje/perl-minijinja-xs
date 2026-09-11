@@ -12,3 +12,5 @@ JinjaTest::jinja_test_case(
         count  => 42,
     },
 );
+
+1;

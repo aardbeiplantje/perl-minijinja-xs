@@ -23,3 +23,5 @@ is(eval_expr($env, "'Hello, ' ~ name ~ '!'", { name => 'World' }), 'Hello, World
 add_template($env, 'bool_test', "{% if n is even %}even{% else %}odd{% endif %}");
 is(render_template($env, 'bool_test', { n => 4 }), "even", 'boolean condition true');
 is(render_template($env, 'bool_test', { n => 3 }), "odd", 'boolean condition false');
+
+1;

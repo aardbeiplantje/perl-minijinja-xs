@@ -94,3 +94,5 @@ if (exists $ENV{MINIJINJA_UPDATE_EXPECTATIONS} && $ENV{MINIJINJA_UPDATE_EXPECTAT
 
     is($result, $expected_output, 'rendered output matches expected');
 }
+
+1;

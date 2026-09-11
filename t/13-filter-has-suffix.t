@@ -10,3 +10,5 @@ is(render_str($env, 'tpl.j2', "{{ val | has_suffix('world') }}", { val => 'hello
 is(render_str($env, 'tpl.j2', "{{ val | has_suffix('xyz') }}", { val => 'hello world' }), '0', 'has_suffix false no match');
 
 done_testing();
+
+1;

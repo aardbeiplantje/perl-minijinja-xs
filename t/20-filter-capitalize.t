@@ -13,3 +13,5 @@ is(render_str($env, 'tpl.j2', "{% set x = '' | capitalize %}{{ x }}", {}), '', '
 is(render_str($env, 'tpl.j2', "{% set x = 'already Capitalized' | capitalize %}{{ x }}", {}), 'Already capitalized', 'capitalize already capitalized');
 
 done_testing();
+
+1;

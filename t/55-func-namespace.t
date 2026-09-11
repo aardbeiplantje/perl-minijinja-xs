@@ -10,3 +10,5 @@ add_function($env, 'namespace', \&Minijinja::Function::namespace_fn);
 is(render_str($env, 'tpl.j2', "{% set ns = namespace() %}{{ns is defined}}", {}), 'True', 'namespace basic');
 
 done_testing();
+
+1;

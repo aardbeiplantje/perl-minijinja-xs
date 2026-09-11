@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set h = {'a': 1, 'b': 2} %}{% set v = h | get(
 is(render_str($env, 'tpl.j2', "{% set h = {'a': 1} %}{% set v = h | get('missing') %}{% if v is defined %}{{ v }}{% else %}undefined{% endif %}", {}), 'undefined', 'get missing key');
 
 done_testing();
+
+1;

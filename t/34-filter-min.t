@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set x = [3, 1, 2] | min %}{% if x is defined %
 is(render_str($env, 'tpl.j2', "{% set x = [] | min %}{% if x is defined %}{{ x }}{% else %}undefined{% endif %}", {}), 'undefined', 'min empty');
 
 done_testing();
+
+1;

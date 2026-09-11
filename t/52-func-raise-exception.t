@@ -14,3 +14,5 @@ my $out = eval { render_str($env, 'tpl.j2', "{% set x = 1 %}{{ raise_exception('
 is(defined($out) ? 1 : 0, 1, 'render continues after exception (known limitation)');
 
 done_testing();
+
+1;

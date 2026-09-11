@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{{ endswith('hello world', 'world') }}", {}), '1'
 is(render_str($env, 'tpl.j2', "{{ endswith('hello world', 'xyz') }}", {}), '0', 'endswith no match');
 
 done_testing();
+
+1;

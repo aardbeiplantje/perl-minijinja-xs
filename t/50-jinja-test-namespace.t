@@ -31,3 +31,5 @@ JinjaTest::jinja_test_case(
     expected   => 'template-namespace.jinja.test-04.out',
     context    => { use_nested => 1 },
 );
+
+1;

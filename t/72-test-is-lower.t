@@ -14,3 +14,5 @@ is(render_str($env, 'tpl.j2', "{% set x = '' %}{% if x is is_lower %}1{% else %}
 is(render_str($env, 'tpl.j2', "{% set x = 'hello world' %}{% if x is is_lower %}1{% else %}0{% endif %}", {}), '1', '"hello world" IS all lowercase');
 
 done_testing();
+
+1;

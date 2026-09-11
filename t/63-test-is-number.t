@@ -18,3 +18,5 @@ is(Minijinja::Test::is_number("true"), 0, 'is_number "true" string rejected');
 is(Minijinja::Test::is_number(), 0, 'is_number undef (no args) rejected');
 
 done_testing();
+
+1;

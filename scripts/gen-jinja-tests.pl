@@ -31,7 +31,8 @@ sub scan_templates {
         push @templates, $entry;
     }
     closedir($dh);
-    return sort @templates;
+    my @result = sort @templates;
+    return @result;
 }
 
 sub list_expected_outputs {
@@ -44,7 +45,8 @@ sub list_expected_outputs {
         }
     }
     closedir($dh);
-    return sort { $a->{test_num} <=> $b->{test_num} } @outputs;
+    my @sorted_outputs = sort { $a->{test_num} <=> $b->{test_num} } @outputs;
+    return @sorted_outputs;
 }
 
 if ($scan_only) {

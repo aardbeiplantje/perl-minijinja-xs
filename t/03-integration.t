@@ -217,3 +217,5 @@ test_unicode();
 test_edge_cases();
 
 done_testing();
+
+1;

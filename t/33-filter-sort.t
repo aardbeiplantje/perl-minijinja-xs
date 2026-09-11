@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for x in [3, 1, 2] | sort %}{{ x }},{% endfor 
 is(render_str($env, 'tpl.j2', "{% for x in [1, 3, 2] | sort(reverse=true) %}{{ x }},{% endfor %}", {}), '3,2,1,', 'sort descending');
 
 done_testing();
+
+1;

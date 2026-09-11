@@ -13,3 +13,5 @@ is(Minijinja::Test::is_boolean("0"), 0, 'Minijinja::Test::is_boolean "0" string 
 is(Minijinja::Test::is_boolean(), 0, 'Minijinja::Test::is_boolean undef (no args) rejected');
 
 done_testing();
+
+1;

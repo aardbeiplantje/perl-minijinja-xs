@@ -19,3 +19,5 @@ is(render_str($env, 'tpl.j2', "{% set v = {'a': 1} %}{% if v is _callable_check 
 is(Minijinja::Test::is_callable(), 0, 'Minijinja::Test::is_callable undef (no args) rejected');
 
 done_testing();
+
+1;

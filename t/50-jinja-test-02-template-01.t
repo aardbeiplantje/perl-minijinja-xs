@@ -17,3 +17,5 @@ JinjaTest::jinja_test_case(
         ],
     },
 );
+
+1;

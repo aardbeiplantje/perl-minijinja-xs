@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for x in [1, 2, 3] | list %}{{ x }},{% endfor 
 is(render_str($env, 'tpl.j2', "{% for x in [] | list %}X{% endfor %}", {}), '', 'list empty');
 
 done_testing();
+
+1;

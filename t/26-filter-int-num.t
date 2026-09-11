@@ -12,3 +12,5 @@ is(render_str($env, 'tpl.j2', "{% set x = -5.9 | int_num %}{{ x }}", {}), '-5', 
 is(render_str($env, 'tpl.j2', "{% set x = 42 | int_num %}{{ x }}", {}), '42', 'int already integer');
 
 done_testing();
+
+1;

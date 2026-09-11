@@ -13,3 +13,5 @@ is(render_str($env, 'tpl.j2', "{% set x = '   clean' | lstrip %}{{ x }}", {}), '
 is(render_str($env, 'tpl.j2', "{% set x = '!!!hello' | lstrip('!') %}{{ x }}", {}), 'hello', 'lstrip custom char');
 
 done_testing();
+
+1;

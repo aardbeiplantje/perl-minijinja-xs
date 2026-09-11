@@ -14,3 +14,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 42 %}{% if x is is_mapping %}1{% else 
 is(render_str($env, 'tpl.j2', "{% set x = '' %}{% if x is is_mapping %}1{% else %}0{% endif %}", {}), '0', 'empty string is NOT a mapping');
 
 done_testing();
+
+1;

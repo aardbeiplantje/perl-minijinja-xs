@@ -9,3 +9,5 @@ is(Minijinja::Test::is_string("0"), 1, 'is_string "0" (string not int)');
 is(Minijinja::Test::is_string(), 0, 'is_string undef rejected');
 
 done_testing();
+
+1;

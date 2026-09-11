@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{{ startswith('hello world', 'hel') }}", {}), '1'
 is(render_str($env, 'tpl.j2', "{{ startswith('hello world', 'xyz') }}", {}), '0', 'startswith no match');
 
 done_testing();
+
+1;

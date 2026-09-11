@@ -13,3 +13,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 'clean   ' | rstrip %}{{ x }}", {}), '
 is(render_str($env, 'tpl.j2', "{% set x = 'hello!!' | rstrip('!') %}{{ x }}", {}), 'hello');
 
 done_testing();
+
+1;

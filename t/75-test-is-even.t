@@ -15,3 +15,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 42.5 %}{% if x is is_even %}1{% else %
 is(render_str($env, 'tpl.j2', "{% if nonexistent_var is is_even %}1{% else %}0{% endif %}", {}), '0', 'undefined value is NOT even');
 
 done_testing();
+
+1;

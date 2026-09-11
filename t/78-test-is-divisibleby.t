@@ -15,3 +15,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 0 %}{% if x is is_divisibleby(5) %}1{%
 is(render_str($env, 'tpl.j2', "{% set x = 5 %}{% if x is is_divisibleby(0) %}1{% else %}0{% endif %}", {}), '0', 'nothing IS divisible by zero');
 
 done_testing();
+
+1;

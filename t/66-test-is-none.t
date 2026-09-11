@@ -19,3 +19,5 @@ is(Minijinja::Test::is_none("None"), 0, 'is_none string "None" is NOT none');
 is(Minijinja::Test::is_none(0), 0, 'is_none integer zero is NOT none');
 
 done_testing();
+
+1;

@@ -14,3 +14,5 @@ is(render_str($env, 'tpl.j2', "{% set x = {'a': 1} %}{% if x is is_undefined %}1
 is(render_str($env, 'tpl.j2', "{% if nonexistent_var is is_undefined %}1{% else %}0{% endif %}", {}), '1', 'missing variable IS undefined');
 
 done_testing();
+
+1;

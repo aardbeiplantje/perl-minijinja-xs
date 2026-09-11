@@ -69,3 +69,5 @@ my $test_result = render_template($env, 'test_cb', { n => 4 });
 is($test_result, 'even', "custom test with memory tracking works");
 
 done_testing();
+
+1;

@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for p in 'a b c' | split %}{{ p }},{% endfor %
 is(render_str($env, 'tpl.j2', "{% for p in 'x,y,z' | split(',') %}{{ p }},{% endfor %}", {}), 'x,y,z,', 'split custom delimiter');
 
 done_testing();
+
+1;

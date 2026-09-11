@@ -14,3 +14,5 @@ is(render_str($env, 'tpl.j2', "{% set x = '' %}{% if x is is_false %}1{% else %}
 is(render_str($env, 'tpl.j2', "{% set x = 0 %}{% if x is is_false %}1{% else %}0{% endif %}", {}), '0', 'integer 0 is NOT false (identity check)');
 
 done_testing();
+
+1;

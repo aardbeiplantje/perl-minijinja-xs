@@ -17,3 +17,5 @@ is(Minijinja::Test::is_float('hello'), 0, 'is_float non-numeric string rejected'
 is(Minijinja::Test::is_float(), 0, 'is_float undef (no args) rejected');
 
 done_testing();
+
+1;

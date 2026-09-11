@@ -1,11 +1,11 @@
 use strict; use warnings;
 
 BEGIN {
-    if (!$ENV{COVERAGE}) {
-        print "1..0\n";
-        print "# Set COVERAGE=1 to run coverage tests\n";
-        exit 0;
-    }
+if (!$ENV{COVERAGE}) {
+    print "1..0\n";
+    print "# Set COVERAGE=1 to run coverage tests\n";
+    exit 0;
+}
 }
 
 use Test::More;

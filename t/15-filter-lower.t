@@ -12,3 +12,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 'Hello World!' | lower %}{{ x }}", {})
 is(render_str($env, 'tpl.j2', "{% set x = '' | lower %}{{ x }}", {}), '', 'lower empty string');
 
 done_testing();
+
+1;

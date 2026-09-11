@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set x = [3, 1, 2] | max %}{% if x is defined %
 is(render_str($env, 'tpl.j2', "{% set x = [] | max %}{% if x is defined %}{{ x }}{% else %}undefined{% endif %}", {}), 'undefined', 'max empty');
 
 done_testing();
+
+1;

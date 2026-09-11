@@ -19,3 +19,5 @@ is(render_str($env, 'tpl.j2', "{% set h = {'x': 1, 'y': 2} %}{% set k = 'z' %}{%
 is(render_str($env, 'tpl.j2', "{% set s = 'hello world' %}{% set sub = 'world' %}{% if sub is is_in(s) %}1{% else %}0{% endif %}", {}), '1', '"world" IS substring of "hello world"');
 
 done_testing();
+
+1;

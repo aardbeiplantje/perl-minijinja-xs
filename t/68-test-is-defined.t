@@ -14,3 +14,5 @@ is(render_str($env, 'tpl.j2', "{% set x = {'a': 1} %}{% if x is is_defined %}1{%
 is(render_str($env, 'tpl.j2', "{% if nonexistent_var is is_defined %}1{% else %}0{% endif %}", {}), '0', 'missing variable is NOT defined');
 
 done_testing();
+
+1;

@@ -11,3 +11,5 @@ eval {
 is($@, "", "Environment creation eval ok");
 ok(defined $env, "Environment creation defined");
 done_testing();
+
+1;

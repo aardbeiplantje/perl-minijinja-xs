@@ -13,3 +13,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 'no_spaces' | strip %}{{ x }}", {}), '
 is(render_str($env, 'tpl.j2', "{% set x = '!hello!' | strip('!') %}{{ x }}", {}), 'hello', 'strip custom char');
 
 done_testing();
+
+1;

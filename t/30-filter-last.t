@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set x = [1, 2, 3] | last %}{% if x is defined 
 is(render_str($env, 'tpl.j2', "{% set x = [] | last %}{% if x is defined %}{{ x }}{% else %}undefined{% endif %}", {}), 'undefined', 'last empty');
 
 done_testing();
+
+1;

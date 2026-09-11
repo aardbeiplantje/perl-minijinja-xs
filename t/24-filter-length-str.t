@@ -12,3 +12,5 @@ is(render_str($env, 'tpl.j2', "{% set x = '' | length_str %}{{ x }}", {}), '0', 
 is(render_str($env, 'tpl.j2', "{% set x = 42 | length_str %}{{ x }}", {}), '2', 'length from number');
 
 done_testing();
+
+1;

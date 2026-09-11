@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set x = strftime_now() %}{% if x is defined an
 is(render_str($env, 'tpl.j2', "{% set x = strftime_now('%Y-%m-%d') %}{% if x is defined and x != '' %}1{% else %}0{% endif %}", {}), '1', 'strftime_now with format');
 
 done_testing();
+
+1;

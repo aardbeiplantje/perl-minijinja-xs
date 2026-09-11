@@ -14,3 +14,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 'ALREADY' | upper %}{{ x }}", {}), 'AL
 is(render_str($env, 'tpl.j2', "{% set x = 42 | upper %}{{ x }}", {}), '42');
 
 done_testing();
+
+1;

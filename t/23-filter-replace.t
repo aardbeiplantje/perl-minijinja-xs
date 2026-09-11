@@ -12,3 +12,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 'hello world' | replace('o', '0') %}{{
 is(render_str($env, 'tpl.j2', "{% set x = 'no match here' | replace('xyz', 'abc') %}{{ x }}", {}), 'no match here');
 
 done_testing();
+
+1;

@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for x in [1, 2, 3] | reverse %}{{ x }},{% endf
 is(render_str($env, 'tpl.j2', "{% for x in [] | reverse %}X{% endfor %}", {}), '', 'reverse empty');
 
 done_testing();
+
+1;

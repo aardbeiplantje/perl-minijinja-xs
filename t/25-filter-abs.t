@@ -13,3 +13,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 0 | abs %}{{ x }}", {}), '0', 'abs zer
 is(render_str($env, 'tpl.j2', "{% set x = -3.14 | abs %}{{ x }}", {}), '3.14', 'abs negative float');
 
 done_testing();
+
+1;

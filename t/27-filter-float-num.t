@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set x = 42 | float_num %}{{ x }}", {}), '42', 
 is(render_str($env, 'tpl.j2', "{% set x = 3.14 | float_num %}{{ x }}", {}), '3.14', 'float preserve decimal');
 
 done_testing();
+
+1;

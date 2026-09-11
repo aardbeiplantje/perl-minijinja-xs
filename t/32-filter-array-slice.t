@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for x in [0, 1, 2, 3, 4] | array_slice(1, 4) %
 is(render_str($env, 'tpl.j2', "{% for x in [0, 1, 2, 3, 4] | array_slice(0, 5, 2) %}{{ x }},{% endfor %}", {}), '0,2,4,', 'slice with step');
 
 done_testing();
+
+1;

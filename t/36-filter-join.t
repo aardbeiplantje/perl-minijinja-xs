@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% set x = [1, 2, 3] | join(',') %}{{ x }}", {}),
 is(render_str($env, 'tpl.j2', "{% set x = ['a','b'] | join('-') %}{{ x }}", {}), 'a-b', 'join custom separator');
 
 done_testing();
+
+1;

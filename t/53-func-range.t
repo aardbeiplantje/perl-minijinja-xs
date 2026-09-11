@@ -11,3 +11,5 @@ is(render_str($env, 'tpl.j2', "{% for x in range(10) %}{{ x }},{% endfor %}", {}
 is(render_str($env, 'tpl.j2', "{% for x in range(2, 6) %}{{ x }},{% endfor %}", {}), '2,3,4,5,', 'range with start stop');
 
 done_testing();
+
+1;
