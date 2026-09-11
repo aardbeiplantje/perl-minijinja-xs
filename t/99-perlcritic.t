@@ -26,7 +26,7 @@ if(@missing_deps){
     plan skip_all => "skip - Perl::Critic not available (see diagnostics above)";
 }
 
-plan tests => 78;
+plan tests => 86;
 
 # Collect all files matching patterns
 chdir("$FindBin::Bin/..") || die "Error chdir: $!\n";
