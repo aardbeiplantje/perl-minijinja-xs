@@ -33,11 +33,6 @@ WriteMakefile(
     },
     CC                  => 'g++',
     LD                  => 'g++',
-    TESTS               => 't/*.t',
-    HARNESS_OPTIONS     => 'j16',
-    test                => {
-        HARNESS_PERL_SWITCHES => '-MDevel::Cover',
-    },
     dist                => {
         COMPRESS        => 'gzip -9f',
         SUFFIX          => 'gz'
@@ -46,8 +41,10 @@ WriteMakefile(
 
 sub MY::postamble {
     return <<'MAKE_FRAG';
+export HARNESS_OPTIONS = j16
+
 testcover: pure_all
-	HARNESS_OPTIONS=j16 HARNESS_PERL_SWITCHES=-MDevel::Cover prove -b -v -j16 t/*.t
+	HARNESS_OPTIONS=j16 HARNESS_PERL_SWITCHES=-MDevel::Cover $(PERL_DL_NONLAZY=1) $(FULLPERLRUN) "-MExtUtils::Command::MM" "-MTest::Harness" "-e" "undef *Test::Harness::Switches; test_harness($(TEST_VERBOSE), '$(INST_LIB)', '$(INST_ARCHLIB)')" t/*.t
 	cover
 MAKE_FRAG
 }
