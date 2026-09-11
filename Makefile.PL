@@ -28,6 +28,12 @@ WriteMakefile(
     NEEDS_LINKING       => 1,
     XSMULTI             => 1,
     BUILD_REQUIRES      => {"ExtUtils::MakeMaker" => '7.12'},
+    TEST_REQUIRES       => {
+        "MCE"              => 0,
+        "Perl::Critic"     => 0,
+        "Test::Perl::Critic" => 0,
+        "Perl::Critic::Utils" => 0,
+    },
     XS                  => {
         'lib/Minijinja.xs'  => 'lib/Minijinja.c',
     },
