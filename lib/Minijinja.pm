@@ -734,6 +734,7 @@ sub select_fn {
             } else {
                 my $test_fn = "Minijinja::Test::$test_name";
 
+                no strict 'refs';
                 if (Minijinja::_can_call_test($test_fn)){
                     $matched = $test_fn->($item, @args);
                 } elsif ($test_name eq 'defined'){
@@ -741,6 +742,7 @@ sub select_fn {
                 } else {
                     $matched = Minijinja::Test::test_predicate_to_bool($item);
                 }
+                use strict 'refs';
             }
         }
 
@@ -788,17 +790,19 @@ sub reject {
                         $matched = Minijinja::Test::test_predicate_to_bool($item);
                     }
                 }
-            } else {
-                my $test_fn = "Minijinja::Test::$test_name";
-
-                if (Minijinja::_can_call_test($test_fn)){
-                    $matched = $test_fn->($item, @args);
-                } elsif ($test_name eq 'defined'){
-                    $matched = defined($item) ? 1 : 0;
                 } else {
-                    $matched = Minijinja::Test::test_predicate_to_bool($item);
+                    my $test_fn = "Minijinja::Test::$test_name";
+
+                    no strict 'refs';
+                    if (Minijinja::_can_call_test($test_fn)){
+                        $matched = $test_fn->($item, @args);
+                    } elsif ($test_name eq 'defined'){
+                        $matched = defined($item) ? 1 : 0;
+                    } else {
+                        $matched = Minijinja::Test::test_predicate_to_bool($item);
+                    }
+                    use strict 'refs';
                 }
-            }
         }
 
         push @result, $item unless $matched;
@@ -1087,13 +1091,18 @@ sub _is_undefined {
 # Helper: check if a subroutine can be called
 sub _can_call_test {
     my ($name) = @_;
-    return defined(\&{$name}) && ref(\&{$name}) eq 'CODE';
+    return 0 unless defined $name;
+    # Check if subroutine actually exists in the package by looking at its symbol table
+    no strict 'refs';
+    my $exists = defined *{$name}{CODE};
+    use strict 'refs';
+    return $exists ? 1 : 0;
 }
 
 # Helper: comparison operator wrapper for Jinja tests
 sub _compare_test {
     my ($sa, $sb, $cmp_func) = @_;
-    return 0 if _is_undefined($a) || _is_undefined($b);
+    return 0 if _is_undefined($sa) || _is_undefined($sb);
     my $is_numeric_a = ($sa =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
     my $is_numeric_b = ($sb =~ /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/);
     if ($is_numeric_a && $is_numeric_b){
@@ -1143,29 +1152,38 @@ sub _evaluate_select_pred {
         my $attr_val = _extract_attr($item, $attribute);
         my $test_fn = "Minijinja::Test::$test_name";
 
-        if (_can_call_test($test_fn)){
-            return $test_fn->($attr_val, @$args);
-        } elsif ($test_name eq 'defined'){
+        no strict 'refs';
+        if ($test_name eq 'defined'){
             return defined($attr_val) && !ref($attr_val) ? 1 : 0;
+        } elsif (_can_call_test($test_fn)){
+            return $test_fn->($attr_val, @$args);
         } else {
             return defined($attr_val) ? 1 : 0;
         }
+        use strict 'refs';
     } else {
         my $test_fn = "Minijinja::Test::$test_name";
 
-        if (_can_call_test($test_fn)){
-            return $test_fn->($item, @$args);
-        } elsif ($test_name eq 'defined'){
+        no strict 'refs';
+        if ($test_name eq 'defined'){
             return defined($item) ? 1 : 0;
+        } elsif (_can_call_test($test_fn)){
+            return $test_fn->($item, @$args);
         } else {
             return defined($item) ? 1 : 0;
         }
+        use strict 'refs';
     }
 }
 
 sub _can_call_test {
     my ($name) = @_;
-    return defined(\&{$name}) && ref(\&{$name}) eq 'CODE';
+    return 0 unless defined $name;
+    # Check if subroutine actually exists in the package by looking at its symbol table
+    no strict 'refs';
+    my $exists = defined *{$name}{CODE};
+    use strict 'refs';
+    return $exists ? 1 : 0;
 }
 
 sub _get_comparison_ops {
