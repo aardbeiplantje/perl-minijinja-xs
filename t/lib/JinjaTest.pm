@@ -27,7 +27,7 @@ sub load_template {
         die "Template file not found: $path\n";
     }
 
-    open my $fh, '<', $path or die "Cannot open '$path': $!\n";
+    open my $fh, '<:encoding(UTF-8)', $path or die "Cannot open '$path': $!\n";
     local $/;
     my $content = <$fh>;
     close $fh;
@@ -119,7 +119,7 @@ sub jinja_test_case {
     my $expected_output = undef;
 
     if ($has_expected) {
-        open my $efh, '<', $full_expected_path or die "Cannot open expected file '$full_expected_path': $!\n";
+        open my $efh, '<:encoding(UTF-8)', $full_expected_path or die "Cannot open expected file '$full_expected_path': $!\n";
         local $/;
         $expected_output = <$efh>;
         close $efh;
@@ -142,7 +142,7 @@ sub jinja_test_case {
 
     # In update mode, write out the actual output regardless of whether expected existed
     if (exists $ENV{MINIJINJA_UPDATE_EXPECTATIONS} && $ENV{MINIJINJA_UPDATE_EXPECTATIONS}) {
-        open my $wfh, '>', $full_expected_path or die "Cannot write expected file '$full_expected_path': $!\n";
+        open my $wfh, '>:encoding(UTF-8)', $full_expected_path or die "Cannot write expected file '$full_expected_path': $!\n";
         print $wfh $actual_output;
         close $wfh;
         unless ($has_expected) {
@@ -217,7 +217,7 @@ sub jinja_test_case_with_input {
     my $expected_output = undef;
 
     if ($has_expected) {
-        open my $efh, '<', $full_expected_path or die "Cannot open expected file '$full_expected_path': $!\n";
+        open my $efh, '<:encoding(UTF-8)', $full_expected_path or die "Cannot open expected file '$full_expected_path': $!\n";
         local $/;
         $expected_output = <$efh>;
         close $efh;
@@ -240,7 +240,7 @@ sub jinja_test_case_with_input {
 
     # In update mode, write out the actual output regardless of whether expected existed
     if (exists $ENV{MINIJINJA_UPDATE_EXPECTATIONS} && $ENV{MINIJINJA_UPDATE_EXPECTATIONS}) {
-        open my $wfh, '>', $full_expected_path or die "Cannot write expected file '$full_expected_path': $!\n";
+        open my $wfh, '>:encoding(UTF-8)', $full_expected_path or die "Cannot write expected file '$full_expected_path': $!\n";
         print $wfh $actual_output;
         close $wfh;
         unless ($has_expected) {

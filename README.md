@@ -245,6 +245,17 @@ add_function($env, 'raise_exception', sub { die $_[0] });
 # → renders aborts, error_detail() returns "something went wrong"
 ```
 
+Callbacks may also return booleans as `JSON::PP::true` / `JSON::PP::false` (any blessed scalar is a boolean
+by its string value), or plain `1` / `0`.
+
+## Strings
+
+Text is exchanged as Perl character strings: context values, hash keys, template sources, expressions and
+callback arguments go to minijinja as UTF-8 whatever their internal form (a string of Latin-1 characters such
+as `"\x{e9}t\x{e9}"` included, without changing the caller's scalar), and rendered output, `eval_expr`
+results, callback arguments and `error_detail()` come back as character strings. Decode text read from files
+(`open my $fh, '<:encoding(UTF-8)', ...`) and encode output (`binmode STDOUT, ':encoding(UTF-8)'`).
+
 ## Testing
 
 Run the full suite:

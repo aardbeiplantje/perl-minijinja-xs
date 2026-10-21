@@ -33,7 +33,7 @@ if (-d 't/resources') {
 
 # Load template source
 my $template_path = "$resources_dir/template-01.jinja";
-open my $fh, '<', $template_path or die "Cannot open '$template_path': $!\n";
+open my $fh, '<:encoding(UTF-8)', $template_path or die "Cannot open '$template_path': $!\n";
 local $/;
 my $template_source = <$fh>;
 close $fh;
@@ -79,7 +79,7 @@ if (!defined($result)) {
 my $expected_path = "$resources_dir/input-01.out";
 
 if (exists $ENV{MINIJINJA_UPDATE_EXPECTATIONS} && $ENV{MINIJINJA_UPDATE_EXPECTATIONS}) {
-    open my $wfh, '>', $expected_path or die "Cannot write '$expected_path': $!\n";
+    open my $wfh, '>:encoding(UTF-8)', $expected_path or die "Cannot write '$expected_path': $!\n";
     print $wfh $result;
     close $wfh;
     print STDERR "Updated expected output: input-01.out\n";
@@ -87,7 +87,7 @@ if (exists $ENV{MINIJINJA_UPDATE_EXPECTATIONS} && $ENV{MINIJINJA_UPDATE_EXPECTAT
     unless (-f $expected_path) {
         die "Expected output file not found: '$expected_path'. Run with MINIJINJA_UPDATE_EXPECTATIONS=1 to generate it.\n";
     }
-    open my $efh, '<', $expected_path or die "Cannot open '$expected_path': $!\n";
+    open my $efh, '<:encoding(UTF-8)', $expected_path or die "Cannot open '$expected_path': $!\n";
     local $/;
     my $expected_output = <$efh>;
     close $efh;

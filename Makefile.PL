@@ -2,10 +2,12 @@ use strict; use warnings;
 
 use ExtUtils::MakeMaker;
 use Config;
+use File::Spec;
 
-# Allow environment variables to override default paths  
-my $minijinja_src_dir = $ENV{'MINIJINJA_SRC'} || 'minijinja';
-my $lib_dir = "$minijinja_src_dir/target/release"; 
+# Allow environment variables to override default paths
+# Absolute, so that the rpath finds the library wherever the module is loaded from
+my $minijinja_src_dir = File::Spec->rel2abs($ENV{'MINIJINJA_SRC'} || 'minijinja');
+my $lib_dir = "$minijinja_src_dir/target/release";
 my $inc_dir = "$minijinja_src_dir/minijinja-cabi/include";
 my $r_path  = $ENV{MINIJINJA_RPATH} || "$minijinja_src_dir/target/release";
 

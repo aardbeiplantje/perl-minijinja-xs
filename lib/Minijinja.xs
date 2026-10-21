@@ -18,15 +18,40 @@ typedef struct perl_mj_env {
 typedef struct cb_data {
     perl_mj_env_t *pe;
     SV *code_ref;
+    SV *result;  /* a loader / path join result: minijinja copies it before the next call */
 } cb_data_t;
 
 /* Thread-local storage for exception handling */
 static int mj_exception_set = 0;
-static const char *mj_pending_exception = NULL;
+static char *mj_pending_exception = NULL;
 
 static void mj_clear_exception(pTHX) {
     mj_exception_set = 0;
+    Safefree(mj_pending_exception);
     mj_pending_exception = NULL;
+}
+
+/* A string SV's text as UTF-8 for minijinja, without changing the SV: a string without the UTF8 flag holds
+ * Latin-1 characters, so a mortal copy is upgraded when it has bytes >= 0x80 */
+static const char *sv_utf8_cstr(pTHX_ SV *sv) {
+    STRLEN l, i;
+    const char *s = SvPV(sv, l);
+    if (SvUTF8(sv)) return s;
+    for (i = 0; i < l && !((U8)s[i] & 0x80); i++) ;
+    if (i == l) return s;
+    return SvPVutf8_nolen(sv_2mortal(newSVpvn(s, l)));
+}
+
+/* A UTF-8 string from minijinja as a Perl character string */
+static SV *utf8_sv(pTHX_ const char *s) {
+    return newSVpvn_flags(s, strlen(s), SVf_UTF8);
+}
+
+/* Keeps a copy of the message of a callback that died, for error_detail */
+static void mj_set_exception(pTHX_ SV *err) {
+    mj_clear_exception(aTHX);
+    mj_pending_exception = savepv(sv_utf8_cstr(aTHX_ err));
+    mj_exception_set = 1;
 }
 
 static int mj_has_pending_exception(pTHX) {
@@ -54,6 +79,7 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv);
 static SV *mj_value_to_perl(pTHX_ mj_value val);
 
 static mj_value perl_to_mj_value(pTHX_ SV *sv) {
+    if (sv) SvGETMAGIC(sv);
     if (!sv || !SvOK(sv)) {
         return mj_value_new_undefined();
     }
@@ -83,14 +109,11 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
             HV *hv = (HV*)rv;
             mj_value obj = mj_value_new_object();
             HE *he;
-            I32 key_len;
-            const char *key;
             hv_iterinit(hv);
             while ((he = hv_iternext(hv))) {
-                key = hv_iterkey(he, &key_len);
                 SV *val = hv_iterval(hv, he);
                 mj_value mv = perl_to_mj_value(aTHX_ val);
-                mj_value_set_string_key(&obj, key, mv);
+                mj_value_set_string_key(&obj, sv_utf8_cstr(aTHX_ hv_iterkeysv(he)), mv);
             }
             return obj;
         }
@@ -108,8 +131,7 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
             return mj_value_new_bool(is_false ? 0 : 1);
         }
         /* Non-blessed scalar ref: treat as string */
-        STRLEN len;
-        const char *str = SvPV_nolen(rv);
+        const char *str = sv_utf8_cstr(aTHX_ rv);
         if (str[0] == '\0') {
             return mj_value_new_bool(0);
         }
@@ -125,9 +147,7 @@ static mj_value perl_to_mj_value(pTHX_ SV *sv) {
     }
 
     if (SvPOK(sv)) {
-        STRLEN len;
-        const char *str = SvPV(sv, len);
-        return mj_value_new_string(str);
+        return mj_value_new_string(sv_utf8_cstr(aTHX_ sv));
     }
 
     return mj_value_new_undefined();
@@ -139,7 +159,7 @@ static SV *mj_value_to_perl(pTHX_ mj_value val) {
     switch (kind) {
         case MJ_VALUE_KIND_STRING: {
             char *str = mj_value_to_str(val);
-            SV *sv = newSVpv(str, 0);
+            SV *sv = utf8_sv(aTHX_ str);
             mj_str_free(str);
             return sv;
         }
@@ -152,16 +172,17 @@ static SV *mj_value_to_perl(pTHX_ mj_value val) {
             }
         }
         case MJ_VALUE_KIND_BOOL:
-            return mj_value_is_true(val) ? &PL_sv_yes : &PL_sv_no;
+            return newSVsv(mj_value_is_true(val) ? &PL_sv_yes : &PL_sv_no);
         case MJ_VALUE_KIND_NONE:
         case MJ_VALUE_KIND_UNDEFINED:
-            return &PL_sv_undef;
+            return newSV(0);
         case MJ_VALUE_KIND_SEQ: {
             AV *av = newAV();
             uint64_t len = mj_value_len(val);
             for (uint64_t i = 0; i < len; i++) {
-                mj_value item = mj_value_get_by_index(val, i);
+                mj_value item = mj_value_get_by_index(val, i);  /* a new reference */
                 SV *elem = mj_value_to_perl(aTHX_ item);
+                mj_value_decref(&item);
                 av_push(av, elem);
             }
             return newRV_noinc((SV*)av);
@@ -175,16 +196,17 @@ static SV *mj_value_to_perl(pTHX_ mj_value val) {
                     value = mj_value_get_by_value(val, key);
                     SV *key_sv = mj_value_to_perl(aTHX_ key);
                     SV *val_sv = mj_value_to_perl(aTHX_ value);
-                    STRLEN key_len;
-                    const char *key_str = SvPV(key_sv, key_len);
-                    hv_store(hv, key_str, key_len, val_sv, 0);
+                    hv_store_ent(hv, key_sv, val_sv, 0);
+                    SvREFCNT_dec(key_sv);
+                    mj_value_decref(&value);  /* key and value are new references */
+                    mj_value_decref(&key);
                 }
                 mj_value_iter_free(iter);
             }
             return newRV_noinc((SV*)hv);
         }
         default:
-            return &PL_sv_undef;
+            return newSV(0);
     }
 }
 
@@ -194,169 +216,109 @@ static bool cb_filter_wrapper(void *userdata,
                               mj_value *rv_out) {
     cb_data_t *cbd = (cb_data_t *)userdata; dTHX;
 
-    IV n = 0;
-    SV *svs[15];
-    for(uintptr_t i=0;i<argc&&i<15;i++){
-        SV *a=mj_value_to_perl(aTHX_ args[i]);
-        SvREFCNT_inc(a);
-        svs[n++]=a;
-    }
     I32 rc=0;
+    bool ok;
     dSP;
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
-    for(IV j=0;j<n;j++)
-        XPUSHs(svs[j]);
+    for(uintptr_t i=0;i<argc;i++)
+        XPUSHs(sv_2mortal(mj_value_to_perl(aTHX_ args[i])));
     PUTBACK;
 
-    /* Call the sub with G_EVAL so die/croak are caught in $@ */
+    /* Call the sub with G_EVAL so die/croak are caught in $@. In scalar context a sub that died still
+     * returns one value (undef), so success is an empty $@, not the count. */
     rc=perl_call_sv(cbd->code_ref,G_SCALAR|G_EVAL);
     SPAGAIN;
+    SV *r = rc > 0 ? POPs : &PL_sv_undef;
+    PUTBACK;
 
-    if(rc > 0){
-        /* perl_call_sv succeeded — process return value normally */
-        SV *r=POPs;
-        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
-            mj_value res;
-            if(SvOK(r)){
-                res=perl_to_mj_value(aTHX_ r);
-            } else {
-                res=mj_value_new_undefined();
-            }
-            *rv_out=res;
-        } else {
-            *rv_out=mj_value_new_undefined();
-        }
-        FREETMPS;
-        LEAVE;
-        for(IV j=0;j<n;j++)
-            SvREFCNT_dec(svs[j]);
-        return true;
+    ok = !SvTRUE(ERRSV);
+    if(ok){
+        *rv_out = perl_to_mj_value(aTHX_ r);
     } else {
-        /* perl_call_sv failed (rc == -1 means eval error from die/croak).
-         * Extract the error message from $@ and propagate as minijinja exception. */
-        GV *err_gv = gv_fetchpv("@@", 0, SVt_PVMG);
-        STRLEN msg_len = 0;
-        const char *msg = NULL;
-
-        if (err_gv && GvSV(err_gv) && SvOK(GvSV(err_gv)) && SvPOK(GvSV(err_gv))) {
-            msg = SvPV(GvSV(err_gv), msg_len);
-        } else {
-            msg = "exception raised";
-        }
-
-        mj_pending_exception = msg;
-        mj_exception_set = 1;
-
-        /* Return false to signal failure to minijinja — it will abort rendering */
+        /* Keep the message for error_detail; returning false makes minijinja abort the rendering */
+        mj_set_exception(aTHX_ ERRSV);
         *rv_out = mj_value_new_undefined();
-        FREETMPS;
-        LEAVE;
-        for(IV j=0;j<n;j++)
-            SvREFCNT_dec(svs[j]);
-        return false;  /* tells minijinja to abort */
     }
+    FREETMPS;
+    LEAVE;
+    return ok;
 }
 
+
+/* A loader / path join callback's string result as UTF-8, or NULL for undef or a die */
+static const char *cb_string_result(pTHX_ cb_data_t *cbd, I32 rc, SV *r) {
+    if (rc <= 0 || SvTRUE(ERRSV)) return NULL;
+    SvGETMAGIC(r);
+    if (!SvOK(r)) return NULL;
+    if (!cbd->result) cbd->result = newSV(0);
+    sv_setpv(cbd->result, sv_utf8_cstr(aTHX_ r));
+    return SvPVX(cbd->result);
+}
 
 /* Loader callback: template name -> user_sub -> string or NULL */
 static const char *cb_loader_wrapper(void *userdata, const char *name) {
     cb_data_t *cbd = (cb_data_t*)userdata; dTHX;
-    SV *arg = newSVpv(name, 0);
     I32 rc = 0;
     const char *result = NULL;
     dSP;
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
-    XPUSHs(arg);
+    XPUSHs(sv_2mortal(utf8_sv(aTHX_ name)));
     PUTBACK;
     rc = perl_call_sv(cbd->code_ref, G_SCALAR|G_EVAL);
     SPAGAIN;
-    if(rc > 0){
-        SV *r = POPs;
-        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
-            if(SvOK(r)){
-                STRLEN l;
-                const char *s = SvPV(r, l);
-                result = strdup(s);
-            } else {
-                result = NULL;
-            }
-        } else {
-            result = NULL;
-        }
-    } else {
-        result = NULL;
-    }
+    SV *r = rc > 0 ? POPs : &PL_sv_undef;
+    PUTBACK;
+    result = cb_string_result(aTHX_ cbd, rc, r);
     FREETMPS;
     LEAVE;
-    SvREFCNT_dec(arg);
     return result;
 }
 
 /* Auto-escape callback: template name -> user_sub -> MJ_AUTO_ESCAPE_HTML or NONE */
 static enum mj_auto_escape cb_auto_escape_wrapper(void *userdata, const char *name) {
     cb_data_t *cbd = (cb_data_t*)userdata; dTHX;
-    SV *arg = newSVpv(name, 0);
     I32 rc = 0;
     int html = 0;
     dSP;
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
-    XPUSHs(arg);
+    XPUSHs(sv_2mortal(utf8_sv(aTHX_ name)));
     PUTBACK;
     rc = perl_call_sv(cbd->code_ref, G_SCALAR|G_EVAL);
     SPAGAIN;
-    if(rc > 0){
-        SV *r = POPs;
-        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
-            html = SvTRUE(r) ? 1 : 0;
-        }
-    }
+    SV *r = rc > 0 ? POPs : &PL_sv_undef;
+    PUTBACK;
+    if (rc > 0 && !SvTRUE(ERRSV))
+        html = SvTRUE(r) ? 1 : 0;
     FREETMPS;
     LEAVE;
-    SvREFCNT_dec(arg);
     return html ? MJ_AUTO_ESCAPE_HTML : MJ_AUTO_ESCAPE_NONE;
 }
 
 /* Path join callback: (name,parent) -> user_sub -> joined path string or NULL */
 static const char *cb_path_join_wrapper(void *userdata, const char *name, const char *parent) {
     cb_data_t *cbd = (cb_data_t*)userdata; dTHX;
-    SV *a1 = newSVpv(name, 0), *a2 = newSVpv(parent, 0);
     I32 rc = 0;
     const char *result = NULL;
     dSP;
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
-    XPUSHs(a1);
-    XPUSHs(a2);
+    XPUSHs(sv_2mortal(utf8_sv(aTHX_ name)));
+    XPUSHs(sv_2mortal(utf8_sv(aTHX_ parent)));
     PUTBACK;
     rc = perl_call_sv(cbd->code_ref, G_SCALAR|G_EVAL);
     SPAGAIN;
-    if(rc > 0){
-        SV *r = POPs;
-        if(!SvROK(r)||!(SvTYPE(SvRV(r))==SVt_PVMG&&mg_get(r))){
-            if(SvOK(r)){
-                STRLEN l;
-                const char *s = SvPV(r, l);
-                result = strdup(s);
-            } else {
-                result = NULL;
-            }
-        } else {
-            result = NULL;
-        }
-    } else {
-        result = NULL;
-    }
+    SV *r = rc > 0 ? POPs : &PL_sv_undef;
+    PUTBACK;
+    result = cb_string_result(aTHX_ cbd, rc, r);
     FREETMPS;
     LEAVE;
-    SvREFCNT_dec(a1);
-    SvREFCNT_dec(a2);
     return result;
 }
 
@@ -430,7 +392,7 @@ void M_DESTROY(SV *sv)
         }
         Safefree(pe);
 
-bool M_add_template(SV *env_sv, char *name, char *source)
+bool M_add_template(SV *env_sv, char *name, SV *source)
     PREINIT:
         perl_mj_env_t *pe;
     CODE:
@@ -438,7 +400,7 @@ bool M_add_template(SV *env_sv, char *name, char *source)
         if (!THISSvOK(env_sv)) XSRETURN_UNDEF;
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
-        RETVAL = mj_env_add_template(pe->env, name, source);
+        RETVAL = mj_env_add_template(pe->env, name, sv_utf8_cstr(aTHX_ source));
     OUTPUT:
         RETVAL
 
@@ -477,28 +439,13 @@ SV *M_render_template(SV *env_sv, char *name, SV *ctx_sv)
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
 
-        if (items >= 3 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
-            HV *hv = (HV*)SvRV(ctx_sv);
-            HE *he;
-            I32 key_len;
-            const char *key;
-
-            ctx = mj_value_new_object();
-            hv_iterinit(hv);
-            while ((he = hv_iternext(hv))) {
-                key = hv_iterkey(he, &key_len);
-                SV *val = hv_iterval(hv, he);
-                mj_value mv = perl_to_mj_value(aTHX_ val);
-                mj_value_set_string_key(&ctx, key, mv);
-            }
-        } else {
-            ctx = mj_value_new_object();
-        }
+        mj_clear_exception(aTHX);
+        ctx = items >= 3 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV
+            ? perl_to_mj_value(aTHX_ ctx_sv) : mj_value_new_object();
 
         char *result = mj_env_render_template(pe->env, name, ctx);
         if (result) {
-            SV *sv = sv_newmortal();
-            sv_setpv(sv, result);
+            SV *sv = sv_2mortal(utf8_sv(aTHX_ result));
             mj_str_free(result);
             ST(0) = sv;
             XSRETURN(1);
@@ -506,7 +453,7 @@ SV *M_render_template(SV *env_sv, char *name, SV *ctx_sv)
             XSRETURN_UNDEF;
         }
 
-SV *M_render_str(SV *env_sv, char *name, char *source, SV *ctx_sv)
+SV *M_render_str(SV *env_sv, char *name, SV *source, SV *ctx_sv)
     PREINIT:
         perl_mj_env_t *pe;
         mj_value ctx;
@@ -517,28 +464,13 @@ SV *M_render_str(SV *env_sv, char *name, char *source, SV *ctx_sv)
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
 
-        if (items >= 4 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
-            HV *hv = (HV*)SvRV(ctx_sv);
-            HE *he;
-            I32 key_len;
-            const char *key;
+        mj_clear_exception(aTHX);
+        ctx = items >= 4 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV
+            ? perl_to_mj_value(aTHX_ ctx_sv) : mj_value_new_object();
 
-            ctx = mj_value_new_object();
-            hv_iterinit(hv);
-            while ((he = hv_iternext(hv))) {
-                key = hv_iterkey(he, &key_len);
-                SV *val = hv_iterval(hv, he);
-                mj_value mv = perl_to_mj_value(aTHX_ val);
-                mj_value_set_string_key(&ctx, key, mv);
-            }
-        } else {
-            ctx = mj_value_new_object();
-        }
-
-        char *result = mj_env_render_named_str(pe->env, name, source, ctx);
+        char *result = mj_env_render_named_str(pe->env, name, sv_utf8_cstr(aTHX_ source), ctx);
         if (result) {
-            SV *sv = sv_newmortal();
-            sv_setpv(sv, result);
+            SV *sv = sv_2mortal(utf8_sv(aTHX_ result));
             mj_str_free(result);
             ST(0) = sv;
             XSRETURN(1);
@@ -546,7 +478,7 @@ SV *M_render_str(SV *env_sv, char *name, char *source, SV *ctx_sv)
             XSRETURN_UNDEF;
         }
 
-SV *M_eval_expr(SV *env_sv, char *expr, SV *ctx_sv)
+SV *M_eval_expr(SV *env_sv, SV *expr, SV *ctx_sv)
     PREINIT:
         perl_mj_env_t *pe;
         mj_value ctx, result;
@@ -557,26 +489,13 @@ SV *M_eval_expr(SV *env_sv, char *expr, SV *ctx_sv)
         pe = THIS(env_sv);
         if (pe->env == NULL) XSRETURN_UNDEF;
 
-        if (items >= 3 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV) {
-            HV *hv = (HV*)SvRV(ctx_sv);
-            HE *he;
-            I32 key_len;
-            const char *key;
+        mj_clear_exception(aTHX);
+        ctx = items >= 3 && SvROK(ctx_sv) && SvTYPE(SvRV(ctx_sv)) == SVt_PVHV
+            ? perl_to_mj_value(aTHX_ ctx_sv) : mj_value_new_object();
 
-            ctx = mj_value_new_object();
-            hv_iterinit(hv);
-            while ((he = hv_iternext(hv))) {
-                key = hv_iterkey(he, &key_len);
-                SV *val = hv_iterval(hv, he);
-                mj_value mv = perl_to_mj_value(aTHX_ val);
-                mj_value_set_string_key(&ctx, key, mv);
-            }
-        } else {
-            ctx = mj_value_new_object();
-        }
-
-        result = mj_env_eval_expr(pe->env, expr, ctx);
-        ST(0) = mj_value_to_perl(aTHX_ result);
+        result = mj_env_eval_expr(pe->env, sv_utf8_cstr(aTHX_ expr), ctx);
+        ST(0) = sv_2mortal(mj_value_to_perl(aTHX_ result));
+        mj_value_decref(&result);
         XSRETURN(1);
 
 bool M_add_global(SV *env_sv, char *name, SV *val_sv)
@@ -886,13 +805,13 @@ char *M_error_detail()
         dTHX;
         /* Check for pending exception from user callback die/croak */
         if (mj_has_pending_exception(aTHX) && mj_get_pending_exception(aTHX)) {
-            ST(0) = sv_2mortal(newSVpv(mj_get_pending_exception(aTHX), 0));
+            ST(0) = sv_2mortal(utf8_sv(aTHX_ mj_get_pending_exception(aTHX)));
             mj_clear_exception(aTHX);
             XSRETURN(1);
         }
         char *detail = mj_err_get_detail();
         if (detail) {
-            ST(0) = sv_2mortal(newSVpv(detail, 0));
+            ST(0) = sv_2mortal(utf8_sv(aTHX_ detail));
             mj_str_free(detail);
             XSRETURN(1);
         } else {

@@ -2,7 +2,7 @@ package Minijinja;
 
 use strict; use warnings;
 
-our $VERSION = "0.1.0";
+our $VERSION = "0.1.1";
 
 use Exporter 'import';
 
@@ -56,12 +56,13 @@ package Minijinja::Filter;
 our $json_encoder;
 
 sub _get_json_encoder {
-    return $json_encoder // do {
+    return $json_encoder //= do {
         eval {
             require JSON::PP
         };
         die "Minijinja requires JSON::PP: $@" if $@;
-        JSON::PP->new->utf8->canonical;
+        # character strings in and out: the XS passes Perl strings to and from minijinja as UTF-8
+        JSON::PP->new->canonical;
     };
 }
 
@@ -104,13 +105,13 @@ sub has_prefix {
     my ($s, $prefix) = @_;
 
     if (!defined($s) || !defined($prefix)){
-        return "0"
+        return 0
     }
 
     if (substr($s, 0, length($prefix)) eq $prefix){
-        return "1"
+        return 1
     } else {
-        return "0"
+        return 0
     }
 }
 
@@ -119,13 +120,13 @@ sub has_suffix {
     my ($s, $suffix) = @_;
 
     if (!defined($s) || !defined($suffix)){
-        return "0"
+        return 0
     }
 
     if (length($s) >= length($suffix) && substr($s, -length($suffix)) eq $suffix){
-        return "1"
+        return 1
     } else {
-        return "0"
+        return 0
     }
 }
 
