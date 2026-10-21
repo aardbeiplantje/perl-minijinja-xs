@@ -1,0 +1,19 @@
+# The minijinja checkout (scripts/setup-minijinja.sh clones and builds it)
+^minijinja/
+
+# Version control and agent notes
+^\.git/
+^\.gitignore$
+^AGENTS\.md$
+^\.cocoindex_code/
+
+# Build products
+^Makefile$
+^Makefile\.old$
+^MYMETA\.
+^blib/
+^pm_to_blib$
+^lib/Minijinja\.(?:c|o|bs)$
+^cover_db/
+^Minijinja-[\d.]+(?:\.tar\.gz)?/?$
+\.tar\.gz$
