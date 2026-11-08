@@ -1,23 +1,26 @@
 use strict; use warnings;
 use Test::More;
 
-# Check if required modules can load
-my @missing_deps;
-for my $mod ("Perl::Critic", "Perl::Critic::Utils", "MCE::Grep") {
-    eval "require $mod";
-    if ($@) {
-        print "# $@\n";
-        push @missing_deps, $mod;
+# Check if required modules can load: at compile time, before the `use MCE::Grep` below is compiled (it needs
+# mce_grep's prototype), so that a missing module skips the test instead of failing to compile it
+BEGIN {
+    my @missing_deps;
+    for my $mod ("Perl::Critic", "Perl::Critic::Utils", "MCE::Grep") {
+        eval "require $mod";
+        if ($@) {
+            print "# $@\n";
+            push @missing_deps, $mod;
+        }
     }
-}
 
-if(@missing_deps){
-    diag("Required modules not fully installed.");
-    diag("Missing: " . join(", ", @missing_deps));
-    diag("");
-    diag("Install via: cpan -i MCE Perl::Critic");
-    diag("");
-    plan skip_all => "skip - required modules not available (see diagnostics above)";
+    if(@missing_deps){
+        diag("Required modules not fully installed.");
+        diag("Missing: " . join(", ", @missing_deps));
+        diag("");
+        diag("Install via: cpan -i MCE Perl::Critic");
+        diag("");
+        plan skip_all => "skip - required modules not available (see diagnostics above)";
+    }
 }
 
 use FindBin;
