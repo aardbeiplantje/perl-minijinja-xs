@@ -59,6 +59,7 @@ t/53-func-range.t
 t/53-utf8-and-returns.t
 t/54-func-strftime-now.t
 t/55-func-namespace.t
+t/56-loop-controls.t
 t/60-test-is-string.t
 t/61-test-is-integer.t
 t/62-test-is-float.t

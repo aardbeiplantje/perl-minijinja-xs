@@ -34,8 +34,9 @@ fi
 
 # Build minijinja-cabi library 
 echo "[BUILD] Building minijinja-cabi..."
-cd "$CABI_SRC" 
-cargo build --release
+cd "$CABI_SRC"
+# loop_controls: {% break %} / {% continue %}, which chat templates use (GLM-5.3-Flash); not a default feature
+cargo build --release --features minijinja/loop_controls
 
 if [ ! -f "$LIB_PATH" ]; then
     echo "ERROR: Failed to build libminijinja_cabi.so"
